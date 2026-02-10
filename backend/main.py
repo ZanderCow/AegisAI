@@ -12,10 +12,7 @@ async def lifespan(app: FastAPI):
 
 from src.api.v1.api import api_router
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    lifespan=lifespan
-)
+app = FastAPI()
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
