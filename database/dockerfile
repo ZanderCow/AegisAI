@@ -1,0 +1,14 @@
+# ──────────────────────────────────────────────────────────────
+# AegisAI – PostgreSQL Database
+# Official Postgres 16 image on Alpine Linux.
+# ──────────────────────────────────────────────────────────────
+
+FROM postgres:16-alpine
+
+# Default credentials & database name.
+# Override at runtime with -e flags if needed.
+ENV POSTGRES_USER=aegis_user
+ENV POSTGRES_PASSWORD=aegis_pass
+ENV POSTGRES_DB=aegisai
+
+EXPOSE 5432
