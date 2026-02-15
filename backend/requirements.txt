@@ -1,12 +1,5 @@
-fastapi
-uvicorn[standard]
-beanie
-pymongo[srv]
-pydantic-settings
-pytest
-pytest-asyncio
-httpx
-email-validator
-passlib[argon2]
-python-jose[cryptography]
-python-multipart
+# Add your Python dependencies here
+# Example:
+# flask==3.0.0
+# requests==2.31.0
+# python-dotenv==1.0.0
