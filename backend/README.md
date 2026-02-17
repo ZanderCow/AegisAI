@@ -11,33 +11,40 @@ A Python backend application.
 
 ### Local Development
 
-1. Create and activate virtual environment:
+1. Create a virtual environment:
 ```bash
-source venv/bin/activate  # On Unix/macOS
-# or
-venv\Scripts\activate  # On Windows
+python3 -m venv venv
 ```
 
-2. Install dependencies:
+2. Activate the virtual environment:
+```bash
+source venv/bin/activate  # macOS / Linux
+venv\Scripts\activate     # Windows
+```
+
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Run the application:
+4. Run the application:
 ```bash
-python main.py
+uvicorn src.main:app --reload
 ```
+
+The API will be available at `http://localhost:8000`.
+Interactive docs (Swagger UI): `http://localhost:8000/docs`
 
 ### Docker
 
 1. Build the Docker image:
 ```bash
-docker build -t backend-app .
+docker build -t aegisai-backend .
 ```
 
 2. Run the container:
 ```bash
-docker run -p 8000:8000 backend-app
+docker run -p 8000:8000 aegisai-backend
 ```
 
 ## Project Structure
@@ -50,7 +57,7 @@ docker run -p 8000:8000 backend-app
 └── main.py
 ```
 
-## Back in Architecture
+## Backend Architecture
 
 ```mermaid
 graph LR
