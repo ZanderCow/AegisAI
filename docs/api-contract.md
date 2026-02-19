@@ -85,3 +85,122 @@ Get current authenticated user's profile information.
   "detail": "Not authenticated"
 }
 ```
+
+---
+
+## PUT /api/auth/change-password
+
+Change the current user's password.
+
+**Authorization:** Bearer token required in Authorization header
+
+**Request Body:**
+```json
+{
+  "current_password": "OldPassword123!",
+  "new_password": "NewSecurePass456!"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "message": "Password changed successfully"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "detail": "Current password is incorrect"
+}
+```
+
+**Response 401 Unauthorized:**
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+---
+
+## POST /api/auth/password-reset
+
+Request a password reset token via email.
+
+**Request Body:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "message": "Password reset email sent"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "detail": "Email not found"
+}
+```
+
+---
+
+## POST /api/auth/password-reset/confirm
+
+Confirm password reset with token and set new password.
+
+**Request Body:**
+```json
+{
+  "token": "reset-token-from-email",
+  "new_password": "NewSecurePass456!"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "message": "Password reset successfully"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "detail": "Invalid or expired reset token"
+}
+```
+
+---
+
+## POST /api/auth/verify-email
+
+Verify user email address with verification token.
+
+**Request Body:**
+```json
+{
+  "token": "verification-token-from-email"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "message": "Email verified successfully"
+}
+```
+
+**Response 400 Bad Request:**
+```json
+{
+  "detail": "Invalid or expired verification token"
+}
+```
