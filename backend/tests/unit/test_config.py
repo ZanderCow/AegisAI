@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
-from src.core.config import Settings, get_settings
+from core.config import Settings, get_settings
 
 # Load every key/value from .env.example once at module level.
 # dotenv_values strips inline comments, so entries like

@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from src.models.user_model import User
+from models.user_model import User
 
 
 class UserRepository:

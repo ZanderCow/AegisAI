@@ -14,8 +14,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from src.api.v1.api import api_router
-from src.core.db import connect_db, disconnect_db
+from api.v1.api import api_router
+from core.db import connect_db, disconnect_db
 
 
 @asynccontextmanager

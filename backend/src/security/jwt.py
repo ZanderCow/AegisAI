@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from fastapi import HTTPException, status
 
-from src.core.config import settings
+from core.config import settings
 
 
 # ---------------------------------------------------------------------------

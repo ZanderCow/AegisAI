@@ -4,7 +4,7 @@ Tests: hash_password, verify_password
 Run with: pytest tests/unit/test_password.py -v
 """
 import pytest
-from src.security.password import hash_password, verify_password
+from security.password import hash_password, verify_password
 
 
 class TestHashPassword:

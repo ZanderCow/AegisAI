@@ -6,10 +6,10 @@ import uuid
 
 from fastapi import HTTPException, status
 
-from src.security.password import hash_password, verify_password
-from src.security.jwt import create_access_token, decode_access_token
-from src.repo.user_repository import UserRepository
-from src.models.user_model import User
+from security.password import hash_password, verify_password
+from security.jwt import create_access_token, decode_access_token
+from repo.user_repository import UserRepository
+from models.user_model import User
 
 
 class UserService:

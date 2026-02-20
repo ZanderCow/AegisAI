@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from src.core.config import settings
+from .config import settings
 
 
 class Base(DeclarativeBase):
@@ -24,7 +24,7 @@ async def get_db():
 async def connect_db() -> None:
     """Create all database tables on startup."""
     # Import here to avoid circular imports at module load time
-    from src.models import user_model  # noqa: F401 – registers User with Base
+    from models import user_model  # noqa: F401 – registers User with Base
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -8,8 +8,8 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text
 
-from src.core.db import engine, Base
-import src.models.user_model  # noqa: F401 – ensures User is registered with Base
+from core.db import engine, Base
+import models.user_model  # noqa: F401 – ensures User is registered with Base
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -25,7 +25,7 @@ async def create_tables():
 @pytest.fixture
 async def client():
     """Async HTTP client wired directly to the FastAPI ASGI app."""
-    from src.main import app  # import here so lifespan runs after tables exist
+    from main import app  # import here so lifespan runs after tables exist
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
