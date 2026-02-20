@@ -87,12 +87,12 @@ graph LR
 
 1. Build the image:
 
-   **From the project root:**
+   **If you are in the project root:**
    ```bash
    docker build -f db/Dockerfile.test -t aegisai-db-test db/
    ```
 
-   **From the `backend` folder:**
+   **If you are in the `backend` folder:**
    ```bash
    docker build -f ../db/Dockerfile.test -t aegisai-db-test ../db/
    ```
@@ -137,6 +137,25 @@ SELECT * FROM users;  -- should return an empty table
 ```bash
 docker rm -f aegisai-db-test-container
 ```
+
+## Testing
+
+Make sure your virtual environment is activated before running tests.
+
+### Run all unit tests
+```bash
+python -m pytest tests/unit/ -v
+```
+
+### Run a specific test file
+```bash
+python -m pytest tests/unit/test_config.py -v
+```
+
+### What the flags do
+- `-v` — verbose output, shows each test name and pass/fail status
+
+> **Note:** Unit tests do **not** require a running database — they only test configuration and business logic in isolation.
 
 ## Environment Variables
 Configure your environment variables in a `.env` file (not tracked in git).
