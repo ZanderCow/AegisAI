@@ -9,7 +9,8 @@ from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.database import Base
+# from src.database import Base
+from core.db import Base
 
 class User(Base):
     """Represents an application user stored in the ``users`` table.
