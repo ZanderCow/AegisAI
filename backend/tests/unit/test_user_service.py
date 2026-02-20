@@ -35,7 +35,7 @@ def mock_user():
 @pytest.fixture
 def service(mock_repo):
     """UserService with mocked repo — import happens here so patches apply first."""
-    from service.user_service import UserService
+    from src.service.user_service import UserService
     return UserService(mock_repo)
 
 
@@ -49,8 +49,8 @@ class TestRegisterUser:
         mock_repo.get_user_by_email.return_value = None
         mock_repo.create_user.return_value = mock_user
 
-        with patch("service.user_service.hash_password", return_value="hashed_secret"), \
-             patch("service.user_service.create_access_token", return_value="jwt.token"):
+        with patch("src.service.user_service.hash_password", return_value="hashed_secret"), \
+             patch("src.service.user_service.create_access_token", return_value="jwt.token"):
             user, token = await service.register_user("test@example.com", "password123")
 
         mock_repo.create_user.assert_awaited_once_with(
@@ -80,8 +80,8 @@ class TestLoginUser:
     async def test_login_success(self, service, mock_repo, mock_user):
         mock_repo.get_user_by_email.return_value = mock_user
 
-        with patch("service.user_service.verify_password", return_value=True), \
-             patch("service.user_service.create_access_token", return_value="jwt.token"):
+        with patch("src.service.user_service.verify_password", return_value=True), \
+             patch("src.service.user_service.create_access_token", return_value="jwt.token"):
             token = await service.login_user("test@example.com", "password123")
 
         assert token == "jwt.token"
@@ -101,7 +101,7 @@ class TestLoginUser:
         from fastapi import HTTPException
         mock_repo.get_user_by_email.return_value = mock_user
 
-        with patch("service.user_service.verify_password", return_value=False):
+        with patch("src.service.user_service.verify_password", return_value=False):
             with pytest.raises(HTTPException) as exc:
                 await service.login_user("test@example.com", "wrongpass")
 
@@ -117,16 +117,18 @@ class TestGetCurrentUser:
     async def test_get_current_user_success(self, service, mock_repo, mock_user):
         mock_repo.get_user_by_id.return_value = mock_user
 
-        with patch("service.user_service.decode_access_token", return_value={"sub": "1"}):
+        import uuid
+        fake_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        with patch("src.service.user_service.decode_access_token", return_value={"sub": str(fake_uuid)}):
             result = await service.get_current_user("valid.token")
 
-        mock_repo.get_user_by_id.assert_awaited_once_with(1)
+        mock_repo.get_user_by_id.assert_awaited_once_with(fake_uuid)
         assert result == mock_user
 
     @pytest.mark.asyncio
     async def test_get_current_user_invalid_token(self, service):
         from fastapi import HTTPException
-        with patch("service.user_service.decode_access_token", return_value={}):
+        with patch("src.service.user_service.decode_access_token", return_value={}):
             with pytest.raises(HTTPException) as exc:
                 await service.get_current_user("bad.token")
 
@@ -137,7 +139,7 @@ class TestGetCurrentUser:
         from fastapi import HTTPException
         mock_repo.get_user_by_id.return_value = None
 
-        with patch("service.user_service.decode_access_token", return_value={"sub": "99"}):
+        with patch("src.service.user_service.decode_access_token", return_value={"sub": "00000000-0000-0000-0000-000000000099"}):
             with pytest.raises(HTTPException) as exc:
                 await service.get_current_user("valid.token")
 

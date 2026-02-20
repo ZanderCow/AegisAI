@@ -3,10 +3,12 @@ User Repository (repo/user_repository.py)
 Handles all database operations for the User model.
 Depends on: SQLAlchemy async session (from core/db.py), User model (from models/user_model.py)
 """
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from models.user_model import User
+from src.models.user_model import User
 
 
 class UserRepository:
@@ -23,7 +25,7 @@ class UserRepository:
         )
         return result.scalars().first()
 
-    async def get_user_by_id(self, user_id: int) -> User | None:
+    async def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
         """
         Fetch a user by their primary key ID.
         Returns the User object or None if not found.

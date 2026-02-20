@@ -2,12 +2,14 @@
 Service Layer (service/user_service.py)
 Business logic for user authentication.
 """
+import uuid
+
 from fastapi import HTTPException, status
 
-from security.password import hash_password, verify_password
-from security.jwt import create_access_token, decode_access_token
-from repo.user_repository import UserRepository
-from models.user_model import User
+from src.security.password import hash_password, verify_password
+from src.security.jwt import create_access_token, decode_access_token
+from src.repo.user_repository import UserRepository
+from src.models.user_model import User
 
 
 class UserService:
@@ -72,7 +74,7 @@ class UserService:
                 detail="Could not validate credentials.",
             )
 
-        user = await self.repo.get_user_by_id(int(user_id))
+        user = await self.repo.get_user_by_id(uuid.UUID(user_id))
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

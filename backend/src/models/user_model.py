@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 # from src.database import Base
-from core.db import Base
+from src.core.db import Base
 
 class User(Base):
     """Represents an application user stored in the ``users`` table.
@@ -66,7 +66,4 @@ class User(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<User(id={self.id!r}, username={self.username!r}, "
-            f"email={self.email!r})>"
-        )
+        return f"<User(id={self.id!r}, email={self.email!r})>"

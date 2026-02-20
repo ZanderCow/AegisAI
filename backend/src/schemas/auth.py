@@ -24,7 +24,6 @@ class RegisterRequest(BaseModel):
     password: str = Field(
         ...,
         min_length=8,
-        must_include=["upper", "lower", "digit", "special"],
         description="User's password (minimum 8 characters)",
         examples=["SecurePass123!"]
     )

@@ -6,8 +6,8 @@ A Python backend application.
 ## Setup
 
 ### Prerequisites
-- Python 3.11+
-- Docker (optional)
+- Python 3.12+
+- Docker (for the test database)
 
 
 ```markdown
@@ -147,6 +147,19 @@ Make sure your virtual environment is activated before running tests.
 python -m pytest tests/unit/ -v
 ```
 
+### Run integration tests
+
+Integration tests require the test database to be running (see **Database Connection** above).
+
+```bash
+python -m pytest tests/integration/ -v
+```
+
+### Run all tests
+```bash
+python -m pytest tests/ -v
+```
+
 ### Run a specific test file
 ```bash
 python -m pytest tests/unit/test_config.py -v
@@ -155,7 +168,8 @@ python -m pytest tests/unit/test_config.py -v
 ### What the flags do
 - `-v` — verbose output, shows each test name and pass/fail status
 
-> **Note:** Unit tests do **not** require a running database — they only test configuration and business logic in isolation.
+> **Note:** Unit tests do **not** require a running database — all dependencies are mocked.
+> Integration tests hit a real PostgreSQL instance and exercise every layer end-to-end.
 
 ## Environment Variables
 Configure your environment variables in a `.env` file (not tracked in git).

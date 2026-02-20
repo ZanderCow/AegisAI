@@ -8,7 +8,7 @@ from unittest.mock import patch
 from datetime import timedelta
 from fastapi import HTTPException
 
-from security.jwt import create_access_token, decode_access_token
+from src.security.jwt import create_access_token, decode_access_token
 
 
 # ---------------------------------------------------------------------------
