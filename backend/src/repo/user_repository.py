@@ -1,41 +1,45 @@
-import uuid
-from typing import Optional
-
-from sqlalchemy import select
+"""
+User Repository (repo/user_repository.py)
+Handles all database operations for the User model.
+Depends on: SQLAlchemy async session (from core/db.py), User model (from models/user_model.py)
+"""
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-from src.models.user_model import User
+from models.user_model import User
 
 
 class UserRepository:
-    """
-    Repository layer for User database operations.
-    Handles all interactions with the PostgreSQL database via SQLAlchemy async sessions.
-    """
+    def __init__(self, db: AsyncSession):
+        self.db = db
 
-    @staticmethod
-    async def get_by_id(session: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
-        """Fetch a user by their UUID."""
-        stmt = select(User).where(User.id == user_id)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def get_by_email(session: AsyncSession, email: str) -> Optional[User]:
-        """Fetch a user by their unique email address."""
-        stmt = select(User).where(User.email == email)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def create(session: AsyncSession, user: User) -> User:
+    async def get_user_by_email(self, email: str) -> User | None:
         """
-        Persist a new user to the database.
-        Note: The user object must have `email` and `hashed_password` populated.
+        Fetch a user by email address.
+        Returns the User object or None if not found.
         """
-        session.add(user)
-        # We need to flush or commit, usually flush so that the ID is generated
-        # and it remains in the same transaction for the service layer to control.
-        await session.flush()
-        await session.refresh(user)
-        return user
+        result = await self.db.execute(
+            select(User).where(User.email == email)
+        )
+        return result.scalars().first()
+
+    async def get_user_by_id(self, user_id: int) -> User | None:
+        """
+        Fetch a user by their primary key ID.
+        Returns the User object or None if not found.
+        """
+        result = await self.db.execute(
+            select(User).where(User.id == user_id)
+        )
+        return result.scalars().first()
+
+    async def create_user(self, email: str, hashed_password: str) -> User:
+        """
+        Insert a new user into the database.
+        Returns the created User object with its generated ID.
+        """
+        new_user = User(email=email, hashed_password=hashed_password)
+        self.db.add(new_user)
+        await self.db.commit()
+        await self.db.refresh(new_user)  # Populates auto-generated fields like id
+        return new_user
