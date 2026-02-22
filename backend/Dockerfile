@@ -26,5 +26,5 @@ COPY . .
 # Expose port (adjust as needed)
 EXPOSE 8000
 
-# Run the application (adjust command as needed)
-CMD ["python", "main.py"]
+# Run the application
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-1} --proxy-headers --forwarded-allow-ips='*' --no-server-header"]

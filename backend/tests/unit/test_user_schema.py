@@ -6,7 +6,7 @@ Run with: pytest tests/unit/test_user_schema.py -v
 import pytest
 from pydantic import ValidationError
 
-from schemas.user_schema import (
+from src.schemas.user_schema import (
     UserRegisterRequest,
     UserLoginRequest,
     UserResponse,

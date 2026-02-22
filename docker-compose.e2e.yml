@@ -1,0 +1,85 @@
+services:
+  db:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.test
+    environment:
+      POSTGRES_DB: aegis_test_db
+      POSTGRES_USER: test_admin
+      POSTGRES_PASSWORD: test_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_admin -d aegis_test_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test_admin:test_password@db:5432/aegis_test_db
+      ENVIRONMENT: development
+      AUTO_CREATE_TABLES: 'true'
+      SQL_ECHO: 'false'
+      SECRET_KEY: e2e-local-secret-key
+      CORS_ORIGINS: '["http://frontend:5173","http://localhost:5173"]'
+      ALLOWED_HOSTS: '["*"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:8000/api/v1/health/', timeout=3); sys.exit(0 if r.status == 200 else 1)\""
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    expose:
+      - '8000'
+
+  frontend:
+    build:
+      context: ./frontend/aegisai
+      dockerfile: Dockerfile.ci
+    environment:
+      VITE_API_BASE_URL: http://backend:8000/api/v1
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:5173/e2e/auth').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\""
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    expose:
+      - '5173'
+
+  selenium:
+    image: selenium/standalone-chromium:latest
+    shm_size: 2gb
+    expose:
+      - '4444'
+
+  e2e-tests:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+    environment:
+      FRONTEND_BASE_URL: http://frontend:5173
+      SELENIUM_REMOTE_URL: http://selenium:4444/wd/hub
+    depends_on:
+      frontend:
+        condition: service_healthy
+      selenium:
+        condition: service_started
+    volumes:
+      - ./e2e:/app
+    entrypoint: ["/bin/sh", "run-selenium-auth.sh"]

@@ -1,0 +1,70 @@
+name: Deploy Railway (Boilerplate)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-railway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Backend to Railway
+    if: ${{ vars.ENABLE_RAILWAY_DEPLOY == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate deploy credentials
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+          RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "Missing GitHub secret: RAILWAY_TOKEN"
+            exit 1
+          fi
+
+          if [ -z "$RAILWAY_SERVICE" ]; then
+            echo "Missing GitHub variable: RAILWAY_SERVICE"
+            exit 1
+          fi
+
+          if [ -z "$RAILWAY_ENVIRONMENT" ]; then
+            echo "Missing GitHub variable: RAILWAY_ENVIRONMENT"
+            exit 1
+          fi
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy backend service (boilerplate)
+        working-directory: backend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+          RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT }}
+        run: |
+          # Boilerplate command. Keep ENABLE_RAILWAY_DEPLOY=false until you provide credentials.
+          railway up --service "$RAILWAY_SERVICE" --environment "$RAILWAY_ENVIRONMENT" --ci
+
+  deploy-disabled:
+    name: Railway Deploy Disabled
+    if: ${{ vars.ENABLE_RAILWAY_DEPLOY != 'true' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment intentionally disabled
+        run: |
+          echo "Railway deployment boilerplate exists but is disabled."
+          echo "Set ENABLE_RAILWAY_DEPLOY=true when ready."
+          echo "Then add RAILWAY_TOKEN (secret), RAILWAY_SERVICE (variable), and RAILWAY_ENVIRONMENT (variable)."
+          echo "Configure production app variables in Railway before enabling deploy."

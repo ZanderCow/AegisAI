@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
-from core.config import Settings, get_settings
+from src.core.config import Settings, get_settings
 
 # Load every key/value from .env.example once at module level.
 # dotenv_values strips inline comments, so entries like
@@ -100,6 +100,8 @@ class TestEnvOverrides:
 
     def test_environment_production(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("SECRET_KEY", "a" * 64)
+        monkeypatch.setenv("ALLOWED_HOSTS", '["api.example.com"]')
         assert Settings().environment == "production"
 
     def test_debug(self, monkeypatch):
@@ -120,6 +122,20 @@ class TestValidation:
 
     def test_invalid_environment(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "not_valid")
+        with pytest.raises(Exception):
+            Settings()
+
+    def test_production_requires_strong_secret(self, monkeypatch):
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("ALLOWED_HOSTS", '["api.example.com"]')
+        monkeypatch.setenv("SECRET_KEY", "weak")
+        with pytest.raises(Exception):
+            Settings()
+
+    def test_production_disallows_wildcard_allowed_hosts(self, monkeypatch):
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("SECRET_KEY", "a" * 64)
+        monkeypatch.setenv("ALLOWED_HOSTS", '["*"]')
         with pytest.raises(Exception):
             Settings()
 

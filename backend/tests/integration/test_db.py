@@ -9,7 +9,7 @@ to fail when no database is available.
 import pytest
 from sqlalchemy import text
 
-from core.db import engine
+from src.core.db import engine
 
 
 class TestDatabase:

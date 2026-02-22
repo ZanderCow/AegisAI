@@ -1,5 +1,6 @@
 # Environment Variable Files
 .env
+e2e/.env
 
 # JetBrains Default Project Files
 .idea/

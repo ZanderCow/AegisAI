@@ -25,9 +25,9 @@ When an agent creates a new route that requires a service, it should first check
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db import get_db
-from repo.user_repository import UserRepository
-from service.user_service import UserService
+from src.core.db import get_db
+from src.repo.user_repository import UserRepository
+from src.service.user_service import UserService
 
 
 def get_user_service(db: AsyncSession = Depends(get_db)) -> UserService:

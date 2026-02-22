@@ -12,12 +12,20 @@ Running Locally
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from api.v1.api import api_router
-from core.config import settings
-from core.db import connect_db, disconnect_db
+from src.core.config import settings
+from src.core.db import connect_db, disconnect_db
+from src.core.logger import configure_logging, get_logger
+from src.api.v1.api import api_router
+
+configure_logging(settings)
+auth_logger = get_logger("auth")
 
 
 @asynccontextmanager
@@ -28,11 +36,36 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AegisAI API",
+    title=settings.app_name,
     description="AegisAI REST API",
-    version="0.1.0",
+    version=settings.app_version,
     lifespan=lifespan,
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/api/v1/auth"):
+        errors = exc.errors()
+        for error in errors:
+            loc = ".".join([str(l) for l in error.get("loc", [])])
+            msg = error.get("msg", "Unknown error")
+            auth_logger.warning(f"[AUTH][VALIDATION] Validation failed: field '{loc}' - {msg}")
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()},
+    )
+
+
+if settings.allowed_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+
+if settings.enforce_https:
+    app.add_middleware(HTTPSRedirectMiddleware)
 
 if settings.cors_origins:
     app.add_middleware(

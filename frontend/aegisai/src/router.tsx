@@ -13,11 +13,13 @@ import { DocumentManagementPage } from '@/pages/admin/DocumentManagementPage';
 import { SecurityPage } from '@/pages/admin/SecurityPage';
 import { SecurityDashboardPage } from '@/pages/security/SecurityDashboardPage';
 import { SecurityDocumentsPage } from '@/pages/security/SecurityDocumentsPage';
+import { AuthE2EPage } from '@/pages/AuthE2EPage';
 
 export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/e2e/auth" element={<AuthE2EPage />} />
       <Route path="/forbidden" element={<ForbiddenPage />} />
 
       <Route element={<ProtectedRoute />}>

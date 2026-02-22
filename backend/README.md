@@ -58,9 +58,10 @@ docker run -p 8000:8000 aegisai-backend
 .
 ├── Dockerfile
 ├── README.md
+├── railway.toml
 ├── requirements.txt
-├── venv/
-└── main.py
+├── src/
+└── tests/
 ```
 
 ## Backend Architecture
@@ -173,6 +174,45 @@ python -m pytest tests/unit/test_config.py -v
 
 ## Environment Variables
 Configure your environment variables in a `.env` file (not tracked in git).
+Start from `.env.example` and tune per environment.
+
+Development defaults:
+- `ENVIRONMENT=development`
+- `LOG_LEVEL=DEBUG`
+- `JSON_LOGS=false`
+- `SQL_ECHO=true`
+- `AUTO_CREATE_TABLES=true`
+- `ENABLE_DOCS=true`
+
+Production defaults:
+- `ENVIRONMENT=production`
+- `LOG_LEVEL=WARNING`
+- `JSON_LOGS=true`
+- `SQL_ECHO=false`
+- `AUTO_CREATE_TABLES=false`
+- `ENABLE_DOCS=false`
+- `ENFORCE_HTTPS=true`
+- `ALLOWED_HOSTS=["your-api-domain.up.railway.app","api.yourdomain.com"]`
+- `CORS_ORIGINS=["https://your-frontend-domain.com"]`
+
+In production, startup validation now fails if:
+- `SECRET_KEY` is weak/default
+- `ALLOWED_HOSTS` includes `"*"`
+- `CORS_ORIGINS` includes `"*"`
+
+## Railway
+`railway.toml` is included and starts the app with:
+```bash
+uvicorn src.main:app --host 0.0.0.0 --port $PORT
+```
+
+Set Railway Variables per environment:
+- `ENVIRONMENT`
+- `DATABASE_URL`
+- `SECRET_KEY`
+- `CORS_ORIGINS`
+- `ALLOWED_HOSTS`
+- `UVICORN_WORKERS` (usually `1` per container)
 
 ## License
 MIT

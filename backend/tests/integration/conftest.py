@@ -8,8 +8,8 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text
 
-from core.db import engine, Base
-import models.user_model  # noqa: F401 – ensures User is registered with Base
+from src.core.db import engine, Base
+import src.models.user_model  # noqa: F401 – ensures User is registered with Base
 
 
 @pytest.fixture(scope="session", autouse=True)
