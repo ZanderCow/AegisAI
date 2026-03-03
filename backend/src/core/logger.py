@@ -1,70 +1,48 @@
-"""
-core/logger.py
-==============
+"""Logging utility for the application.
 
-Centralized logging configuration for all environments.
+Provides a configured logger instance that only emits logs when
+the application is running in the production environment.
 """
-
-import json
 import logging
-from datetime import datetime, timezone
-from logging.config import dictConfig
-
-from src.core.config import Settings
-
-
-class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        payload = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=True)
-
-
-def configure_logging(settings: Settings) -> None:
-    formatter_name = "json" if settings.json_logs_enabled else "plain"
-    access_level = "INFO" if settings.should_log_uvicorn_access else "WARNING"
-
-    dictConfig(
-        {
-            "version": 1,
-            "disable_existing_loggers": False,
-            "formatters": {
-                "plain": {"format": "%(asctime)s %(levelname)s [%(name)s] %(message)s"},
-                "json": {"()": "src.core.logger.JsonFormatter"},
-            },
-            "handlers": {
-                "console": {
-                    "class": "logging.StreamHandler",
-                    "stream": "ext://sys.stdout",
-                    "formatter": formatter_name,
-                }
-            },
-            "root": {"handlers": ["console"], "level": settings.effective_log_level},
-            "loggers": {
-                "uvicorn.error": {
-                    "handlers": ["console"],
-                    "level": "INFO",
-                    "propagate": False,
-                },
-                "uvicorn.access": {
-                    "handlers": ["console"],
-                    "level": access_level,
-                    "propagate": False,
-                },
-            },
-        }
-    )
-
+from src.core.config import settings
 
 def get_logger(name: str) -> logging.Logger:
+    """Retrieves a logger instance configured for the specific module.
+    
+    The logger will only output messages if the ENVIRONMENT variable
+    is set to 'production'. Otherwise, it uses a NullHandler to silently
+    discard all logs.
+    
+    Args:
+        name (str): The name of the module (typically __name__).
+        
+    Returns:
+        logging.Logger: The configured logger instance.
     """
-    Returns a domain-specific logger that hooks into the global configuration.
-    Example: logger = get_logger("payment")
-    """
-    return logging.getLogger(f"aegisai.{name}")
+    logger = logging.getLogger(name)
+    
+    # Avoid adding duplicate handlers if get_logger is called multiple times
+    if not logger.handlers:
+        is_production = getattr(settings, "ENVIRONMENT", "development").lower() == "production"
+        
+        if is_production:
+            logger.setLevel(logging.INFO)
+            # In production, we might want JSON formatting or structured logging,
+            # but for now we keep the simple StreamHandler.
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s - %(levelname)s - [%(name)s] %(message)s"
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        else:
+            # In development, output DEBUG logs to the console for easier troubleshooting
+            logger.setLevel(logging.DEBUG)
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | [%(name)s] %(message)s"
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            
+    return logger

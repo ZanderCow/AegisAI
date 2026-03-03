@@ -1,218 +1,62 @@
-# Backend Project
+# Backend API
 
-## Description
-A Python backend application.
+This is a FastAPI-based backend application with built-in JWT authentication and SQLAlchemy database integration.
 
-## Setup
+## Prerequisites
+- Python 3.10+
+- PostgreSQL (or SQLite for local development)
 
-### Prerequisites
-- Python 3.12+
-- Docker (for the test database)
+## Setup Instructions
+
+We use [uv](https://github.com/astral-sh/uv), the blazing-fast Python package manager, to handle dependencies and environments.
+
+1. **Install uv** (if you don't have it already)
+   - **macOS / Linux**:
+     ```bash
+     curl -LsSf https://astral.sh/uv/install.sh | sh
+     ```
+   - **Windows**:
+     ```powershell
+     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+     ```
 
 
-```markdown
-> **Note:** Make sure that your VS Code window is opened in the `backend` directory, not the root directory of the entire project.
-```
-
-
-### Local Development
-
-1. Create a virtual environment:
-```bash
-python3 -m venv venv
-```
-
-2. Activate the virtual environment:
-```bash
-source venv/bin/activate  # macOS / Linux
-venv\Scripts\activate     # Windows
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Run the application:
-```bash
-uvicorn src.main:app --reload
-```
-
-The API will be available at `http://localhost:8000`.
-Interactive docs (Swagger UI): `http://localhost:8000/docs`
-
-### Docker
-
-1. Build the Docker image:
-```bash
-docker build -t aegisai-backend .
-```
-
-2. Run the container:
-```bash
-docker run -p 8000:8000 aegisai-backend
-```
-
-## Project Structure
-```
-.
-├── Dockerfile
-├── README.md
-├── railway.toml
-├── requirements.txt
-├── src/
-└── tests/
-```
-
-## Backend Architecture
-
-```mermaid
-graph LR
-    A[Endpoint] <--> B[Validation]
-    B <--> C[Service]
-    C <--> D[Security]
-    C <--> E[Repo]
-    E <--> F[(Database)]
-```
-
-*   **Endpoint**: What the front end requests when it hits the back end.
-*   **Validation Layer**: The layer that holds all the schemas that define what the output between the front end and back end should look like. Validation happens here, like checking if a password or email is valid.
-*   **Service Layer**: Performs the business logic, such as checking if an email already exists in the database, handling password hashing, or creating JSON Web Tokens (JWT).
-*   **Repo Layer**: The layer that holds all the database query calls that the service layer calls when it needs to make a database call.
-
-## Database Connection
-
-> **Prerequisites:** Docker must be installed and running.
-
-### Start the Test Database
-
-1. Build the image:
-
-   **If you are in the project root:**
+2. **Clone the repository**
    ```bash
-   docker build -f db/Dockerfile.test -t aegisai-db-test db/
+   git clone <your-repo-url>
+   cd backend
    ```
 
-   **If you are in the `backend` folder:**
+3. **Install Dependencies**
    ```bash
-   docker build -f ../db/Dockerfile.test -t aegisai-db-test ../db/
+   # This will automatically create a virtual environment (.venv) 
+   # and install both application and development dependencies in < 2 seconds.
+   uv sync --dev
    ```
 
-2. Start the container:
+4. **Environment Variables**
+   Create a `.env` file in the root directory (alongside `src/`):
+   ```
+   DATABASE_URL="postgresql+asyncpg://user:password@localhost/dbname"
+   SECRET_KEY="your-super-secret-key"
+   ALGORITHM="HS256"
+   ACCESS_TOKEN_EXPIRE_MINUTES=30
+   ENVIRONMENT="development"  # Set to "production" to enable logging
+   ```
+
+## Running the Application
+
+To start the FastAPI development server using `uv`:
 ```bash
-docker run -d --name aegisai-db-test-container -p 5433:5432 aegisai-db-test
+uv run uvicorn src.main:app --reload
 ```
+The API documentation will be available at `http://127.0.0.1:8000/docs`.
 
-This exposes Postgres on `localhost:5433` (avoids clashing with a local Postgres on 5432).
+## Running Tests
 
-### Connect & Verify
-
-3. Connect via Docker exec:
-```bash
-docker exec -it aegisai-db-test-container psql -U test_admin -d aegis_test_db
-```
-
-Or connect from the host if you have `psql` installed:
-```bash
-psql -h localhost -p 5433 -U test_admin -d aegis_test_db
-```
-
-Connection details:
-| Field    | Value            |
-|----------|------------------|
-| Host     | localhost        |
-| Port     | 5433             |
-| Database | aegis_test_db    |
-| User     | test_admin       |
-| Password | test_password    |
-
-4. Verify the schema was applied:
-```sql
-\dt                   -- should list the 'users' table
-SELECT * FROM users;  -- should return an empty table
-```
-
-### Tear Down
-
-5. Stop and remove the container when done:
-```bash
-docker rm -f aegisai-db-test-container
-```
-
-## Testing
-
-Make sure your virtual environment is activated before running tests.
-
-### Run all unit tests
-```bash
-python -m pytest tests/unit/ -v
-```
-
-### Run integration tests
-
-Integration tests require the test database to be running (see **Database Connection** above).
+To run the `pytest` suite, simply use `uv run`. 
+Because of our `pyproject.toml` configuration, `uv` automatically sets the correct `PYTHONPATH` and loads test environment variables from `.env.example`.
 
 ```bash
-python -m pytest tests/integration/ -v
+uv run pytest
 ```
-
-### Run all tests
-```bash
-python -m pytest tests/ -v
-```
-
-### Run a specific test file
-```bash
-python -m pytest tests/unit/test_config.py -v
-```
-
-### What the flags do
-- `-v` — verbose output, shows each test name and pass/fail status
-
-> **Note:** Unit tests do **not** require a running database — all dependencies are mocked.
-> Integration tests hit a real PostgreSQL instance and exercise every layer end-to-end.
-
-## Environment Variables
-Configure your environment variables in a `.env` file (not tracked in git).
-Start from `.env.example` and tune per environment.
-
-Development defaults:
-- `ENVIRONMENT=development`
-- `LOG_LEVEL=DEBUG`
-- `JSON_LOGS=false`
-- `SQL_ECHO=true`
-- `AUTO_CREATE_TABLES=true`
-- `ENABLE_DOCS=true`
-
-Production defaults:
-- `ENVIRONMENT=production`
-- `LOG_LEVEL=WARNING`
-- `JSON_LOGS=true`
-- `SQL_ECHO=false`
-- `AUTO_CREATE_TABLES=false`
-- `ENABLE_DOCS=false`
-- `ENFORCE_HTTPS=true`
-- `ALLOWED_HOSTS=["your-api-domain.up.railway.app","api.yourdomain.com"]`
-- `CORS_ORIGINS=["https://your-frontend-domain.com"]`
-
-In production, startup validation now fails if:
-- `SECRET_KEY` is weak/default
-- `ALLOWED_HOSTS` includes `"*"`
-- `CORS_ORIGINS` includes `"*"`
-
-## Railway
-`railway.toml` is included and starts the app with:
-```bash
-uvicorn src.main:app --host 0.0.0.0 --port $PORT
-```
-
-Set Railway Variables per environment:
-- `ENVIRONMENT`
-- `DATABASE_URL`
-- `SECRET_KEY`
-- `CORS_ORIGINS`
-- `ALLOWED_HOSTS`
-- `UVICORN_WORKERS` (usually `1` per container)
-
-## License
-MIT

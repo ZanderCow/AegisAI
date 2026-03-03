@@ -1,82 +1,55 @@
+"""Unit tests for the JWT security module.
+
+This module contains unit tests verifying the behavior of encoding JSON Web Tokens
+inside the `src.security.jwt` module.
 """
-Unit Tests — JWT Security Layer (security/jwt.py)
-Tests: create_access_token, decode_access_token
-Run with: pytest tests/unit/test_jwt.py -v
-"""
+from typing import Any
 import pytest
-from unittest.mock import patch
-from datetime import timedelta
-from fastapi import HTTPException
+import jwt
+from datetime import datetime, timezone
 
-from src.security.jwt import create_access_token, decode_access_token
+from src.security.jwt import create_token
+from src.core.config import settings
 
+def test_create_token_success() -> None:
+    """Tests successful creation of a JWT.
+    
+    Verifies that the `create_token` function correctly encodes data into a valid 
+    JWT string, and that the payload successfully decodes using the application's 
+    secret key and algorithm.
+    """
+    data = {"sub": "user_12345"}
+    token = create_token(data)
+    
+    assert isinstance(token, str)
+    assert len(token) > 0
+    
+    # Verify we can decode it with the application settings
+    decoded_payload = jwt.decode(
+        token, 
+        settings.SECRET_KEY, 
+        algorithms=[settings.ALGORITHM]
+    )
+    
+    assert decoded_payload["sub"] == "user_12345"
+    assert "exp" in decoded_payload
+    
+    # Verify that the expiration time was set in the future
+    exp_timestamp = decoded_payload["exp"]
+    exp_datetime = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+    assert exp_datetime > datetime.now(timezone.utc)
 
-# ---------------------------------------------------------------------------
-# create_access_token
-# ---------------------------------------------------------------------------
-
-class TestCreateAccessToken:
-    def test_returns_a_string(self):
-        """Token output should be a non-empty string."""
-        token = create_access_token(data={"sub": "1"})
-        assert isinstance(token, str)
-        assert len(token) > 0
-
-    def test_token_has_three_parts(self):
-        """JWT format is header.payload.signature."""
-        token = create_access_token(data={"sub": "1"})
-        assert token.count(".") == 2
-
-    def test_different_payloads_produce_different_tokens(self):
-        token_a = create_access_token(data={"sub": "1"})
-        token_b = create_access_token(data={"sub": "2"})
-        assert token_a != token_b
-
-    def test_custom_expiry_accepted(self):
-        """Should not raise when a custom expiry delta is passed."""
-        token = create_access_token(data={"sub": "1"}, expires_delta=timedelta(minutes=60))
-        assert token is not None
-
-
-# ---------------------------------------------------------------------------
-# decode_access_token
-# ---------------------------------------------------------------------------
-
-class TestDecodeAccessToken:
-    def test_decode_valid_token(self):
-        """A token we just created should decode back cleanly."""
-        token = create_access_token(data={"sub": "42"})
-        payload = decode_access_token(token)
-        assert payload["sub"] == "42"
-
-    def test_decode_preserves_extra_claims(self):
-        """Any extra claims embedded at creation should survive decoding."""
-        token = create_access_token(data={"sub": "1", "role": "admin"})
-        payload = decode_access_token(token)
-        assert payload.get("role") == "admin"
-
-    def test_decode_expired_token_raises_401(self):
-        """An already-expired token should raise HTTP 401."""
-        token = create_access_token(data={"sub": "1"}, expires_delta=timedelta(seconds=-1))
-        with pytest.raises(HTTPException) as exc:
-            decode_access_token(token)
-        assert exc.value.status_code == 401
-
-    def test_decode_tampered_token_raises_401(self):
-        """A token with a modified payload should be rejected."""
-        token = create_access_token(data={"sub": "1"})
-        tampered = token[:-5] + "XXXXX"  # corrupt the signature
-        with pytest.raises(HTTPException) as exc:
-            decode_access_token(tampered)
-        assert exc.value.status_code == 401
-
-    def test_decode_garbage_string_raises_401(self):
-        """A completely invalid string should raise HTTP 401."""
-        with pytest.raises(HTTPException) as exc:
-            decode_access_token("not.a.token")
-        assert exc.value.status_code == 401
-
-    def test_decode_empty_string_raises_401(self):
-        with pytest.raises(HTTPException) as exc:
-            decode_access_token("")
-        assert exc.value.status_code == 401
+def test_create_token_does_not_mutate_input() -> None:
+    """Tests that the input dictionary is not mutated.
+    
+    Verifies that the `create_token` function copies the input data payload
+    rather than mutating the original dictionary by injecting the `exp` key.
+    """
+    data: dict[str, Any] = {"sub": "user_12345"}
+    original_data = data.copy()
+    
+    create_token(data)
+    
+    # The original data should not have an 'exp' key added to it
+    assert data == original_data
+    assert "exp" not in data
