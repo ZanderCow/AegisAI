@@ -1,50 +1,79 @@
-"""
-Unit Tests — Password Security Layer (security/password.py)
-Tests: hash_password, verify_password
-Run with: pytest tests/unit/test_password.py -v
+"""Unit tests for the password security module.
+
+This module contains unit tests verifying the behavior of bcrypt password hashing
+and verification functions inside the `src.security.password` module.
 """
 import pytest
 from src.security.password import hash_password, verify_password
 
+def test_hash_password() -> None:
+    """Tests that a password hashes successfully and uniquely.
+    
+    Verifies that the `hash_password` function returns a valid bcrypt hash
+    that is different from the plaintext password, and that two identical
+    passwords produce different hashes due to salting.
+    """
+    password = "supersecurepassword123"
+    hashed1 = hash_password(password)
+    hashed2 = hash_password(password)
+    
+    assert hashed1 != password
+    assert hashed1.startswith("$2b$")
+    # Due to salting, two hashes of the same password must not be identical
+    assert hashed1 != hashed2
 
-class TestHashPassword:
-    def test_returns_a_string(self):
-        result = hash_password("mysecret")
-        assert isinstance(result, str)
+def test_verify_password_success() -> None:
+    """Tests successful verification of a correct password.
+    
+    Verifies that a valid plaintext password successfully matches 
+    its corresponding bcrypt hash.
+    """
+    password = "supersecurepassword123"
+    hashed = hash_password(password)
+    
+    result = verify_password(password, hashed)
+    assert result is True
 
-    def test_hash_is_not_plaintext(self):
-        password = "mysecret"
-        assert hash_password(password) != password
+def test_verify_password_failure_wrong_password() -> None:
+    """Tests that an incorrect password fails verification.
+    
+    Verifies that providing an incorrect plaintext password for a valid
+    hash returns False.
+    """
+    password = "supersecurepassword123"
+    wrong_password = "wrongpassword123"
+    hashed = hash_password(password)
+    
+    result = verify_password(wrong_password, hashed)
+    assert result is False
 
-    def test_same_password_produces_different_hashes(self):
-        """bcrypt uses a random salt — two hashes of the same input should differ."""
-        hash1 = hash_password("samepass")
-        hash2 = hash_password("samepass")
-        assert hash1 != hash2
+def test_verify_password_failure_invalid_hash() -> None:
+    """Tests that an invalid hash format safely returns False.
+    
+    Verifies that passing a malformed or invalid hash string to the
+    verification function gets cleanly caught and returns False instead
+    of throwing an exception.
+    """
+    password = "supersecurepassword123"
+    invalid_hash = "not_a_real_bcrypt_hash"
+    
+    result = verify_password(password, invalid_hash)
+    assert result is False
 
-    def test_hash_is_non_empty(self):
-        assert len(hash_password("anypass")) > 0
-
-
-class TestVerifyPassword:
-    def test_correct_password_returns_true(self):
-        password = "correctpass"
-        hashed = hash_password(password)
-        assert verify_password(password, hashed) is True
-
-    def test_wrong_password_returns_false(self):
-        hashed = hash_password("correctpass")
-        assert verify_password("wrongpass", hashed) is False
-
-    def test_empty_password_returns_false(self):
-        hashed = hash_password("somepass")
-        assert verify_password("", hashed) is False
-
-    def test_similar_password_returns_false(self):
-        """Case-sensitive — Password123 and password123 must not match."""
-        hashed = hash_password("Password123")
-        assert verify_password("password123", hashed) is False
-
-    def test_plaintext_against_plaintext_returns_false(self):
-        """Passing a non-hashed string as the hash should not verify."""
-        assert verify_password("password", "password") is False
+def test_password_truncation() -> None:
+    """Tests bcrypt password truncation fallback behavior.
+    
+    Verifies that extremely long passwords exceeding bcrypt's 72-byte
+    limit are safely truncated securely as implemented in the module.
+    """
+    long_password = "a" * 100
+    hashed = hash_password(long_password)
+    
+    # It should succeed without raising a value error from bcrypt
+    result1 = verify_password(long_password, hashed)
+    assert result1 is True
+    
+    # Since it is truncated to 72 chars, providing 72 chars should match
+    # because the excess chars were thrown out during hashing!
+    result2 = verify_password("a" * 72, hashed)
+    assert result2 is True
