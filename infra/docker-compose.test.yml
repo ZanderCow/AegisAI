@@ -17,8 +17,6 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    volumes:
-      - ../backend:/app
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
       SECRET_KEY: test_secret_key_for_e2e_tests_only
@@ -30,16 +28,26 @@ services:
       db:
         condition: service_healthy
 
-  frontend:
+  backend-test:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
+      SECRET_KEY: test_secret_key_for_e2e_tests_only
+      ALGORITHM: HS256
+      ENVIRONMENT: test
+    command: ["uv", "run", "pytest", "tests/"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend-test:
     build:
       context: ../frontend
       dockerfile: Dockerfile
-    volumes:
-      - ../frontend:/app
-      - /app/node_modules
-    environment:
-      VITE_API_URL: http://localhost:8000
-    ports:
-      - "5173:5173"
+    command: ["npm", "run", "test", "--", "--run"]
     depends_on:
-      - backend
+      backend-test:
+        condition: service_completed_successfully
+
