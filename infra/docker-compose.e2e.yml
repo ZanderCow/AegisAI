@@ -49,4 +49,4 @@ services:
     depends_on:
       - frontend
       - backend
-    command: ["sh", "-c", "echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
+    command: ["sh", "-c", "npm ci && echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
