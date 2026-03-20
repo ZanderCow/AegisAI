@@ -9,7 +9,9 @@ from contextlib import asynccontextmanager
 
 from src.core.database import engine
 from src.models.user_model import Base
+from src.models import conversation_model as _conversation_model  # noqa: F401
 from src.api.v1.endpoints import auth
+from src.api.v1.endpoints import chat
 from src.core.logger import get_logger
 
 logger = get_logger("MAIN")
@@ -46,3 +48,4 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")

@@ -71,9 +71,9 @@ def test_config_validation_error_missing_db(monkeypatch: MonkeyPatch) -> None:
     """
     monkeypatch.setenv("SECRET_KEY", "some_key")
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    
+
     with pytest.raises(ValidationError) as exc_info:
-        Settings()
+        Settings(_env_file=None)
         
     error_msg = str(exc_info.value)
     assert "DATABASE_URL" in error_msg
@@ -90,9 +90,9 @@ def test_config_validation_error_missing_secret_key(monkeypatch: MonkeyPatch) ->
     """
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     monkeypatch.delenv("SECRET_KEY", raising=False)
-    
+
     with pytest.raises(ValidationError) as exc_info:
-        Settings()
+        Settings(_env_file=None)
         
     error_msg = str(exc_info.value)
     assert "SECRET_KEY" in error_msg

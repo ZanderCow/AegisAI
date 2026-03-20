@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = Field(default="HS256", description="The algorithm used for JWT signatures.")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, description="Token expiration time in minutes.")
     ENVIRONMENT: str = Field(default="development", description="The current environment (e.g., development, production, testing).")
+    GROQ_API_KEY: str = Field(default="", description="Groq API key for LLM access.")
+    GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key for LLM access.")
+    DEEPSEEK_API_KEY: str = Field(default="", description="DeepSeek API key for LLM access.")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
