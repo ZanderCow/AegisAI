@@ -42,8 +42,8 @@ This skill provides comprehensive guidelines for how to write tests in this proj
 ## Executing Tests
 
 Docker Compose is utilized to orchestrate the execution of tests across the stack:
-- **`docker-compose.dev.yml`**: Use this configuration to run your backend unit tests, backend integration tests, and frontend unit tests.
-- **`docker-compose.yml`**: Use this configuration to execute the complete end-to-end (E2E) test suite.
+- **`docker-compose.test.yml`**: Use this configuration to run your backend unit tests, backend integration tests, and frontend unit tests.
+- **`docker-compose.e2e.yml`**: Use this configuration to execute the complete end-to-end (E2E) test suite.
 
 ## General Agent AI Execution Rules
 - **Progressive Disclosure**: Only read relevant files as needed. Do not guess class names or test names.
