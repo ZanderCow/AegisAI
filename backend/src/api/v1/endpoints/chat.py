@@ -56,7 +56,23 @@ async def create_conversation(
     return ConversationResponse(conversation_id=conversation_id)
 
 
-@router.post("/conversations/{conversation_id}/messages/send")
+@router.post(
+    "/conversations/{conversation_id}/messages/send",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": (
+                "Server-Sent Events (SSE) stream. Each line is `data: {\"content\": str, \"done\": bool}`; "
+                "final event uses `done: true`. Swagger “Try it out” often cannot display streams—use curl or the app UI."
+            ),
+            "content": {
+                "text/event-stream": {
+                    "schema": {"type": "string", "example": 'data: {"content": "Hi", "done": false}\n\n'},
+                }
+            },
+        },
+    },
+)
 async def send_message(
     conversation_id: str,
     request: SendMessageRequest,

@@ -16,7 +16,7 @@ docker-compose -f infra/docker-compose.dev.yml up -d
 
 Once running:
 - Frontend is accessible at: `http://localhost:5173`
-- Backend API is accessible at: `http://localhost:8000`
+- Backend: `http://localhost:8000` — [`/docs`](http://localhost:8000/docs) (Swagger), [`/health`](http://localhost:8000/health), and JSON endpoints under `/api/v1` (e.g. `POST /api/v1/auth/signup`).
 - Database is running on port: `5432`
 
 To stop the development environment, run:
