@@ -3,14 +3,8 @@
 @tailwind utilities;
 
 @layer base {
-  html, body, #root {
-    @apply min-h-screen m-0 p-0;
-  }
-  body, #root {
-    @apply bg-gray-950 text-gray-100 antialiased;
-  }
   body {
+    @apply bg-gray-950 text-gray-100 antialiased;
     font-family: system-ui, -apple-system, sans-serif;
   }
 }
-
