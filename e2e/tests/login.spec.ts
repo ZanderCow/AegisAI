@@ -20,7 +20,7 @@ test.describe('Login flow', () => {
         // Verify localStorage has a token set OR wait for URL to change to /chat
         // Sometimes the backend isn't seeded so we catch the UI response instead
         try {
-            await page.waitForURL('/', { timeout: 3000 });
+            await page.waitForURL('/chat', { timeout: 3000 });
             const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
             expect(token).toBeTruthy();
         } catch (e) {
