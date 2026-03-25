@@ -20,7 +20,7 @@ test.describe('Signup flow', () => {
         try {
             // Wait for navigation / redirect to the root page
             await page.waitForURL('/', { timeout: 3000 });
-            const token = await page.evaluate(() => localStorage.getItem('token'));
+            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
             expect(token).toBeTruthy();
         } catch (e) {
             // If auth setup is incomplete or fails, assert that an error renders
