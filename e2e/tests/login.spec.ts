@@ -17,15 +17,15 @@ test.describe('Login flow', () => {
         // Submit the form
         await page.locator('button[type="submit"]').click();
 
-        // Verify localStorage has a token set OR wait for URL to change to index '/'
+        // Verify localStorage has a token set OR wait for URL to change to /chat
         // Sometimes the backend isn't seeded so we catch the UI response instead
         try {
             await page.waitForURL('/', { timeout: 3000 });
-            const token = await page.evaluate(() => localStorage.getItem('token'));
+            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
             expect(token).toBeTruthy();
         } catch (e) {
             // Fallback: If no seed data exists, we just verify the network call or UI gracefully handles
-            const errorMsg = page.locator('.bg-red-50.text-red-500');
+            const errorMsg = page.locator('.bg-red-900\\/30.text-red-400');
             await expect(errorMsg).toBeVisible();
         }
     });
@@ -38,7 +38,7 @@ test.describe('Login flow', () => {
         await page.locator('button[type="submit"]').click();
 
         // The backend should return a 401 unauthorized or 404
-        const errorMsg = page.locator('.bg-red-50.text-red-500');
+        const errorMsg = page.locator('.bg-red-900\\/30.text-red-400');
         await expect(errorMsg).toBeVisible();
     });
 });
