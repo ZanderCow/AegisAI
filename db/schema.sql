@@ -31,5 +31,12 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS alarm (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id        UUID NOT NULL REFERENCES messages(id),
+  reason            TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations (user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages (conversation_id);
+CREATE INDEX IF NOT EXISTS idx_alarms_message_id ON alarms (message_id);
