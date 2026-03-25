@@ -21,7 +21,7 @@ test.describe('Login flow', () => {
         // Sometimes the backend isn't seeded so we catch the UI response instead
         try {
             await page.waitForURL('/', { timeout: 3000 });
-            const token = await page.evaluate(() => localStorage.getItem('token'));
+            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
             expect(token).toBeTruthy();
         } catch (e) {
             // Fallback: If no seed data exists, we just verify the network call or UI gracefully handles
