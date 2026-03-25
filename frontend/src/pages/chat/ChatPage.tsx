@@ -7,7 +7,7 @@ import { clsx } from 'clsx';
 
 const PROVIDERS: Record<string, { label: string; defaultModel: string }> = {
   groq:     { label: 'Groq',     defaultModel: 'llama-3.1-8b-instant' },
-  gemini:   { label: 'Gemini',   defaultModel: 'gemini-1.5-flash' },
+  gemini:   { label: 'Gemini',   defaultModel: 'gemini-2.5-flash' },
   deepseek: { label: 'DeepSeek', defaultModel: 'deepseek-chat' },
 };
 
