@@ -9,6 +9,7 @@ from src.schemas.chat_schema import CreateConversationRequest
 from src.repo.conversation_repo import ConversationRepository
 from src.models.conversation_model import Conversation
 from src.providers import stream_from_provider
+from src.service.rag_service import RAGService, get_rag_service
 from src.core.logger import get_logger
 
 logger = get_logger("CHAT_SERVICE")
@@ -23,9 +24,10 @@ class ChatService:
         repo (ConversationRepository): The injected repository for database access.
     """
 
-    def __init__(self, repo: ConversationRepository) -> None:
+    def __init__(self, repo: ConversationRepository, rag: RAGService | None = None) -> None:
         """Initializes the service with a conversation repository instance."""
         self.repo = repo
+        self.rag = rag or get_rag_service()
 
     async def create_conversation(
         self, user_id: str, request: CreateConversationRequest
@@ -118,6 +120,20 @@ class ChatService:
 
         all_messages = await self.repo.get_messages(convo.id)
         messages_payload = [{"role": m.role, "content": m.content} for m in all_messages]
+
+        # Inject RAG context as a leading system message if relevant documents exist
+        rag_context = await self.rag.get_context(str(convo.user_id), content)
+        if rag_context:
+            system_msg = {
+                "role": "system",
+                "content": (
+                    "Use the following document excerpts as context to answer the user's question. "
+                    "If the context is not relevant, answer from your own knowledge.\n\n"
+                    f"{rag_context}"
+                ),
+            }
+            messages_payload = [system_msg] + messages_payload
+            logger.info(f"Injected RAG context ({len(rag_context)} chars) for conversation {convo.id}")
 
         full_response = ""
         async for chunk in stream_from_provider(convo.provider, convo.model, messages_payload):

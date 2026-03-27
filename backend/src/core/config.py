@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(default="", description="Groq API key for LLM access.")
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key for LLM access.")
     DEEPSEEK_API_KEY: str = Field(default="", description="DeepSeek API key for LLM access.")
+    CHROMA_PATH: str = Field(default="./chroma_db", description="Path to the ChromaDB persistent storage directory.")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

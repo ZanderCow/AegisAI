@@ -8,7 +8,9 @@ from typing import Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
+from src.core.database import get_db
 from src.core.logger import get_logger
 
 logger = get_logger("SECURITY")
@@ -60,26 +62,36 @@ def decode_token(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> str:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> str:
     """Extracts and validates the authenticated user's ID from a Bearer token.
 
-    Decodes the JWT from the Authorization header and returns the subject
-    claim, which represents the user's ID.
+    Decodes the JWT from the Authorization header, then confirms the user
+    still exists in the database before returning the user ID.
 
     Args:
-        credentials (HTTPAuthorizationCredentials): The HTTP Bearer credentials
-            extracted from the Authorization header by FastAPI's security scheme.
+        credentials: The HTTP Bearer credentials from the Authorization header.
+        db: The async database session.
 
     Returns:
         str: The user ID (the 'sub' claim) extracted from the token payload.
 
     Raises:
-        HTTPException: 401 if the token is expired or invalid.
-        HTTPException: 401 if the token payload does not contain a 'sub' claim.
+        HTTPException: 401 if the token is expired, invalid, or the user no longer exists.
     """
+    from src.repo.user_repo import UserRepository
+
     payload = decode_token(credentials.credentials)
     user_id = payload.get("sub")
     if user_id is None:
         logger.warning("JWT payload missing 'sub' claim")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    user = await UserRepository(db).get_by_id(user_id)
+    if user is None:
+        logger.warning(f"JWT references non-existent user {user_id}")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
     return user_id

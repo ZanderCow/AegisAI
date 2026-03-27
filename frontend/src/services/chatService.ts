@@ -1,7 +1,6 @@
 import type { Conversation, Message } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const STORAGE_KEY = 'aegis_conversations';
 
 function getToken(): string {
   return localStorage.getItem('aegis_token') || '';
@@ -14,16 +13,32 @@ function authHeaders(): Record<string, string> {
   };
 }
 
+/** Extract the user ID from the JWT subject claim without a library. */
+function getCurrentUserId(): string {
+  const token = getToken();
+  if (!token) return 'anonymous';
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.sub || 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+}
+
+function storageKey(): string {
+  return `aegis_conversations_${getCurrentUserId()}`;
+}
+
 function loadStored(): Conversation[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return JSON.parse(localStorage.getItem(storageKey()) || '[]');
   } catch {
     return [];
   }
 }
 
 function saveStored(convos: Conversation[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(convos));
+  localStorage.setItem(storageKey(), JSON.stringify(convos));
 }
 
 export const chatService = {

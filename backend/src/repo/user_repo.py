@@ -24,6 +24,18 @@ class UserRepository:
         """
         self.session = session
 
+    async def get_by_id(self, user_id: str) -> User | None:
+        """Retrieves a single user by their UUID.
+
+        Args:
+            user_id: The UUID string of the user.
+
+        Returns:
+            User | None: The matching User model if found, otherwise None.
+        """
+        result = await self.session.execute(select(User).where(User.id == user_id))
+        return result.scalars().first()
+
     async def get_by_email(self, email: str) -> User | None:
         """Retrieves a single user by their email address.
         

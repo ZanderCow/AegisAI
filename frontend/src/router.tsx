@@ -7,6 +7,7 @@ import { SignupPage } from '@/pages/SignupPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { ForbiddenPage } from '@/pages/ForbiddenPage';
 import { ChatPage } from '@/pages/chat/ChatPage';
+import { RagDocumentsPage } from '@/pages/rag/RagDocumentsPage';
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
 import { RoleManagementPage } from '@/pages/admin/RoleManagementPage';
 import { UserManagementPage } from '@/pages/admin/UserManagementPage';
@@ -27,6 +28,7 @@ export function AppRouter() {
           {/* Chat - accessible to admin, it, hr, finance */}
           <Route element={<RoleGuard allowedRoles={['admin', 'it', 'hr', 'finance']} />}>
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/documents" element={<RagDocumentsPage />} />
           </Route>
 
           {/* Admin routes */}
