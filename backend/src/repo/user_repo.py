@@ -3,6 +3,8 @@
 This module isolates the actual SQLAlchemy ORM queries from the rest of
 the application, conforming to the layered architecture pattern.
 """
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from src.models.user_model import User
@@ -33,7 +35,7 @@ class UserRepository:
         Returns:
             User | None: The matching User model if found, otherwise None.
         """
-        result = await self.session.execute(select(User).where(User.id == user_id))
+        result = await self.session.execute(select(User).where(User.id == uuid.UUID(user_id)))
         return result.scalars().first()
 
     async def get_by_email(self, email: str) -> User | None:
