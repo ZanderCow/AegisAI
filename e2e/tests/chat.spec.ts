@@ -39,7 +39,9 @@ async function setAuth(page: Parameters<typeof test>[1] extends (...args: infer 
         ({ token, convos }) => {
             localStorage.setItem('aegis_token', token);
             if (convos) {
-                localStorage.setItem('aegis_conversations', JSON.stringify(convos));
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                const userId = payload.sub || 'anonymous';
+                localStorage.setItem(`aegis_conversations_${userId}`, JSON.stringify(convos));
             }
         },
         { token: VALID_TOKEN, convos: conversations ?? null },
