@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies.rag import get_rag_service
 from src.core.database import get_db
 from src.schemas.chat_schema import (
     CreateConversationRequest,
@@ -19,6 +20,7 @@ from src.schemas.chat_schema import (
 )
 from src.repo.conversation_repo import ConversationRepository
 from src.service.chat_service import ChatService
+from src.service.rag_service import RAGService
 from src.security.jwt import get_current_user
 from src.providers import validate_provider
 from src.core.logger import get_logger
@@ -28,16 +30,20 @@ logger = get_logger("CHAT_API")
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-def get_chat_service(session: AsyncSession = Depends(get_db)) -> ChatService:
+def get_chat_service(
+    session: AsyncSession = Depends(get_db),
+    rag: RAGService = Depends(get_rag_service),
+) -> ChatService:
     """Dependency injection factory for the ChatService layer.
 
     Args:
         session (AsyncSession): The injected database session dependency.
+        rag (RAGService): The injected RAG service backed by the shared Chroma setup.
 
     Returns:
         ChatService: An initialized instance of the ChatService.
     """
-    return ChatService(ConversationRepository(session))
+    return ChatService(ConversationRepository(session), rag)
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -50,6 +56,15 @@ async def create_conversation(
 
     The provider and model are fixed for the lifetime of the conversation.
     All subsequent messages in this conversation will use the same provider.
+
+    Args:
+        request (CreateConversationRequest): Validated conversation creation
+            payload from the client.
+        service (ChatService): Injected chat service.
+        user_id (str): Authenticated user identifier.
+
+    Returns:
+        ConversationResponse: Identifier for the newly created conversation.
     """
     logger.info(f"Received create conversation request from user {user_id}")
     conversation_id = await service.create_conversation(user_id, request)
@@ -86,6 +101,17 @@ async def send_message(
 
     Each SSE event has the shape: data: {"content": "...", "done": false}
     The final event is: data: {"content": "", "done": true}
+
+    Args:
+        conversation_id (str): Conversation identifier scoped to the current
+            authenticated user.
+        request (SendMessageRequest): Message payload to append and send.
+        service (ChatService): Injected chat service.
+        user_id (str): Authenticated user identifier.
+
+    Returns:
+        StreamingResponse: Server-sent event stream of assistant response
+        chunks followed by a terminal done event.
     """
     logger.info(f"Received send message request for conversation {conversation_id}")
     convo = await service.get_conversation_or_404(conversation_id, user_id)
@@ -109,6 +135,16 @@ async def get_messages(
 
     Returns an empty list if the conversation does not exist or does not
     belong to the authenticated user — conversation existence is not leaked.
+
+    Args:
+        conversation_id (str): Conversation identifier scoped to the current
+            authenticated user.
+        service (ChatService): Injected chat service.
+        user_id (str): Authenticated user identifier.
+
+    Returns:
+        list[MessageResponse]: Ordered conversation history for the requested
+        conversation, or an empty list when inaccessible.
     """
     logger.info(f"Received get messages request for conversation {conversation_id}")
     return await service.get_messages(conversation_id, user_id)

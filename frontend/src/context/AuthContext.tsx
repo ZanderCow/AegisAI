@@ -28,7 +28,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.removeItem('aegis_token');
           setState({ user: null, isAuthenticated: false, isLoading: false });
         } else {
-          const user: User = { id: payload.sub, email: payload.email };
+          const user: User = {
+            id: payload.sub,
+            email: payload.email,
+            name: payload.name ?? payload.email,
+            role: payload.role,
+          };
           setState({ user, isAuthenticated: true, isLoading: false });
         }
       } catch {

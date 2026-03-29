@@ -4,7 +4,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function decodeJwtUser(token: string): User {
   const payload = JSON.parse(atob(token.split('.')[1]));
-  return { id: payload.sub, email: payload.email };
+  return {
+    id: payload.sub,
+    email: payload.email,
+    name: payload.name ?? payload.email,
+    role: payload.role,
+  };
 }
 
 async function parseError(res: Response): Promise<string> {

@@ -3,7 +3,10 @@ export type UserRole = 'admin' | 'security' | 'it' | 'hr' | 'finance';
 export interface User {
   id: string;
   email: string;
+  name?: string;
   role?: UserRole;
+  createdAt?: string;
+  lastLogin?: string;
 }
 
 export interface AuthState {

@@ -18,6 +18,9 @@ export function UserManagementPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState('');
 
+  const getDisplayName = (user: User) => user.name ?? user.email;
+  const getRoleVariant = (user: User) => user.role ? roleBadgeVariant[user.role] : 'default';
+
   useEffect(() => {
     userService.getAll().then(data => {
       setUsers(data);
@@ -36,25 +39,45 @@ export function UserManagementPage() {
     setUsers(prev => prev.filter(u => u.id !== id));
   };
 
-  const filtered = users.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = users.filter(u => {
+    const displayName = getDisplayName(u);
+    const query = search.toLowerCase();
+    return (
+      displayName.toLowerCase().includes(query) ||
+      u.email.toLowerCase().includes(query)
+    );
+  });
 
   const columns = [
     { key: 'name', header: 'Name', render: (u: User) => (
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-aegis-900 text-aegis-400 flex items-center justify-center text-sm font-medium">
-          {u.name.charAt(0)}
+          {getDisplayName(u).charAt(0).toUpperCase()}
         </div>
         <div>
-          <p className="font-medium text-gray-200">{u.name}</p>
+          <p className="font-medium text-gray-200">{getDisplayName(u)}</p>
           <p className="text-xs text-gray-500">{u.email}</p>
         </div>
       </div>
     )},
-    { key: 'role', header: 'Role', render: (u: User) => <Badge variant={roleBadgeVariant[u.role]}>{u.role}</Badge> },
-    { key: 'created', header: 'Created', render: (u: User) => <span className="text-gray-400">{new Date(u.createdAt).toLocaleDateString()}</span> },
+    {
+      key: 'role',
+      header: 'Role',
+      render: (u: User) => (
+        <Badge variant={getRoleVariant(u)}>
+          {u.role ?? 'unassigned'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'created',
+      header: 'Created',
+      render: (u: User) => (
+        <span className="text-gray-400">
+          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
+        </span>
+      ),
+    },
     { key: 'lastLogin', header: 'Last Login', render: (u: User) => <span className="text-gray-400">{u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : 'Never'}</span> },
     { key: 'actions', header: '', render: (u: User) => (
       <Button size="sm" variant="danger" onClick={() => handleDelete(u.id)}>Remove</Button>

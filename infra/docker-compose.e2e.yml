@@ -13,6 +13,14 @@ services:
       timeout: 5s
       retries: 5
 
+  chroma:
+    image: chromadb/chroma:1.5.5
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_e2e_data:/data
+
   backend:
     build:
       context: ../backend
@@ -22,16 +30,27 @@ services:
       SECRET_KEY: test_secret_key_for_e2e_tests_only
       ALGORITHM: HS256
       ENVIRONMENT: development
+      MOCK_PROVIDER_RESPONSES: ${MOCK_PROVIDER_RESPONSES:-false}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_SSL: "false"
+      CHROMA_COLLECTION_NAME: rag_documents
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      chroma:
+        condition: service_started
 
   frontend:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      target: development
     environment:
       VITE_API_URL: http://backend:8000
     ports:
@@ -46,7 +65,16 @@ services:
       - ../e2e:/e2e
     environment:
       FRONTEND_URL: http://frontend:5173
+      BACKEND_URL: http://backend:8000
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      E2E_PROVIDER: ${E2E_PROVIDER:-}
+      E2E_MODEL: ${E2E_MODEL:-}
     depends_on:
       - frontend
       - backend
     command: ["sh", "-c", "npm ci && echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
+
+volumes:
+  chroma_e2e_data:

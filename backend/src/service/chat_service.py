@@ -9,7 +9,7 @@ from src.schemas.chat_schema import CreateConversationRequest
 from src.repo.conversation_repo import ConversationRepository
 from src.models.conversation_model import Conversation
 from src.providers import stream_from_provider
-from src.service.rag_service import RAGService, get_rag_service
+from src.service.rag_service import RAGService
 from src.core.logger import get_logger
 
 logger = get_logger("CHAT_SERVICE")
@@ -22,12 +22,21 @@ class ChatService:
 
     Attributes:
         repo (ConversationRepository): The injected repository for database access.
+        rag (RAGService): Injected RAG service used to enrich prompts with
+            document context when available.
     """
 
-    def __init__(self, repo: ConversationRepository, rag: RAGService | None = None) -> None:
-        """Initializes the service with a conversation repository instance."""
+    def __init__(self, repo: ConversationRepository, rag: RAGService) -> None:
+        """Initialize the chat service.
+
+        Args:
+            repo (ConversationRepository): Repository handling conversation
+                and message persistence.
+            rag (RAGService): Service responsible for document retrieval and
+                context assembly for chat prompts.
+        """
         self.repo = repo
-        self.rag = rag or get_rag_service()
+        self.rag = rag
 
     async def create_conversation(
         self, user_id: str, request: CreateConversationRequest
@@ -114,6 +123,10 @@ class ChatService:
 
         Yields:
             str: Text chunks from the provider's streaming response.
+
+        Raises:
+            Exception: Propagates provider streaming failures to the caller so
+            the endpoint can terminate the stream consistently.
         """
         logger.info(f"Streaming response for conversation {convo.id} provider={convo.provider}")
         await self.repo.add_message(convo.id, "user", content)

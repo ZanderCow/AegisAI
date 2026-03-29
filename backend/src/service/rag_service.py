@@ -1,27 +1,24 @@
 """RAG (Retrieval-Augmented Generation) service using ChromaDB.
 
 Handles PDF ingestion, text chunking, local embedding via ChromaDB's
-built-in ONNX embedding function, and semantic retrieval for injecting
-context into chat completions.
+built-in ONNX embedding function, and semantic retrieval against a
+remote Chroma collection for injecting context into chat completions.
 """
 import asyncio
 import uuid
 from io import BytesIO
-from typing import Optional
 
+from chromadb.api.async_api import AsyncCollection
 from pypdf import PdfReader
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
-from src.core.config import settings
+from src.core.chroma import ChromaManager, get_chroma_manager
 from src.core.logger import get_logger
 
 logger = get_logger("RAG_SERVICE")
 
 _EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-_COLLECTION_NAME = "rag_documents"
 _CHUNK_SIZE = 800
 _CHUNK_OVERLAP = 150
 
@@ -29,7 +26,15 @@ _embedding_fn = DefaultEmbeddingFunction()
 
 
 def _chunk_text(text: str) -> list[str]:
-    """Split text into overlapping chunks."""
+    """Split text into overlapping chunks for retrieval.
+
+    Args:
+        text (str): Raw extracted document text.
+
+    Returns:
+        list[str]: Non-empty overlapping chunks suitable for embedding and
+        semantic search.
+    """
     chunks: list[str] = []
     start = 0
     while start < len(text):
@@ -44,68 +49,94 @@ def _chunk_text(text: str) -> list[str]:
 
 
 async def _get_embeddings(texts: list[str]) -> list[list[float]]:
-    """Compute embeddings locally via ChromaDB's built-in ONNX model."""
+    """Compute embeddings locally via ChromaDB's built-in ONNX model.
+
+    Args:
+        texts (list[str]): Text inputs to embed in batch.
+
+    Returns:
+        list[list[float]]: Dense embedding vectors converted to plain floats.
+    """
     result = await asyncio.to_thread(_embedding_fn, texts)
-    return [list(v) for v in result]
+    return [[float(value) for value in v] for v in result]
+
+
+def _document_where(user_id: str, doc_id: str) -> dict:
+    """Build a Chroma filter matching a single user's document.
+
+    Args:
+        user_id (str): Authenticated user identifier.
+        doc_id (str): Logical document identifier stored in metadata.
+
+    Returns:
+        dict: Chroma metadata filter limiting results to the requested
+        user's document.
+    """
+    return {"$and": [{"user_id": user_id}, {"doc_id": doc_id}]}
 
 
 class RAGService:
     """Service for managing RAG document ingestion and retrieval.
 
-    Uses a persistent ChromaDB collection keyed by user_id metadata
-    so each user's documents are isolated during retrieval.
+    This service owns document parsing, chunking, local embedding, and
+    retrieval assembly. Connection management for the underlying Chroma
+    collection is delegated to the injected ``ChromaManager``.
+
+    Attributes:
+        chroma (ChromaManager): Core-managed access point for the shared
+            remote Chroma collection.
     """
 
-    def __init__(self) -> None:
-        self._client = chromadb.PersistentClient(
-            path=settings.CHROMA_PATH,
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        self._collection = self._client.get_or_create_collection(
-            name=_COLLECTION_NAME,
-            embedding_function=_embedding_fn,
-            metadata={"hnsw:space": "cosine"},
-        )
+    def __init__(self, chroma: ChromaManager | None = None) -> None:
+        """Initialize the RAG service.
 
-    # ------------------------------------------------------------------
-    # Internal sync helpers (run in thread pool to avoid blocking loop)
-    # ------------------------------------------------------------------
+        Args:
+            chroma (ChromaManager | None): Optional injected Chroma manager.
+                When omitted, the shared application-level manager is used.
+        """
+        self.chroma = chroma or get_chroma_manager()
 
-    def _sync_add(
-        self,
-        ids: list[str],
-        documents: list[str],
-        metadatas: list[dict],
-    ) -> None:
-        self._collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas,
-        )
+    async def _get_ids(self, collection: AsyncCollection, where: dict) -> list[str]:
+        """Fetch matching Chroma record IDs for a metadata filter.
 
-    def _sync_get(self, where: dict) -> dict:
-        return self._collection.get(where=where, include=["metadatas"])
+        Args:
+            collection (AsyncCollection): Active Chroma collection handle.
+            where (dict): Metadata filter sent to Chroma.
 
-    def _sync_get_ids(self, where: dict) -> list[str]:
-        result = self._collection.get(where=where, include=[])
+        Returns:
+            list[str]: Matching vector record IDs.
+        """
+        result = await collection.get(where=where, include=[])
         return result["ids"]
 
-    def _sync_delete(self, ids: list[str]) -> None:
-        self._collection.delete(ids=ids)
-
-    def _sync_query(
+    async def _query(
         self,
-        query_texts: list[str],
+        collection: AsyncCollection,
+        query: str,
         n_results: int,
         where: dict,
     ) -> dict:
+        """Run a filtered semantic search against the Chroma collection.
+
+        Args:
+            collection (AsyncCollection): Active Chroma collection handle.
+            query (str): End-user query text to embed and search with.
+            n_results (int): Maximum number of chunks to retrieve.
+            where (dict): Metadata filter limiting the search scope.
+
+        Returns:
+            dict: Raw Chroma query payload containing matched documents and
+            metadata lists.
+        """
         # n_results must not exceed the number of docs in the filtered set
-        ids_in_scope = self._sync_get_ids(where)
+        ids_in_scope = await self._get_ids(collection, where)
         if not ids_in_scope:
             return {"documents": [[]], "metadatas": [[]]}
+
         capped = min(n_results, len(ids_in_scope))
-        return self._collection.query(
-            query_texts=query_texts,
+        query_embeddings = await _get_embeddings([query])
+        return await collection.query(
+            query_embeddings=query_embeddings,
             n_results=capped,
             where=where,
             include=["documents", "metadatas"],
@@ -118,7 +149,22 @@ class RAGService:
     async def add_document(
         self, user_id: str, filename: str, pdf_bytes: bytes
     ) -> dict:
-        """Parse a PDF, chunk it, embed it, and store it in ChromaDB."""
+        """Parse a PDF, chunk it, embed it, and store it in ChromaDB.
+
+        Args:
+            user_id (str): Authenticated user identifier used to partition
+                document access.
+            filename (str): Original uploaded filename.
+            pdf_bytes (bytes): Raw PDF file contents.
+
+        Returns:
+            dict: Upload summary containing document ID, filename, and chunk
+            count for the stored document.
+
+        Raises:
+            ValueError: If the PDF contains no extractable text.
+            RuntimeError: If Chroma is unavailable during the write path.
+        """
         reader = PdfReader(BytesIO(pdf_bytes))
         full_text = "\n".join(
             page.extract_text() or "" for page in reader.pages
@@ -135,14 +181,42 @@ class RAGService:
             {"user_id": user_id, "doc_id": doc_id, "filename": filename, "chunk_index": i}
             for i in range(len(chunks))
         ]
+        embeddings = await _get_embeddings(chunks)
 
-        await asyncio.to_thread(self._sync_add, ids, chunks, metadatas)
+        collection = await self.chroma.get_collection()
+        try:
+            await collection.add(
+                ids=ids,
+                embeddings=embeddings,
+                documents=chunks,
+                metadatas=metadatas,
+            )
+        except Exception as exc:
+            raise self.chroma.unavailable_error("write", exc) from exc
+
         logger.info(f"Stored doc {doc_id} with {len(chunks)} chunks")
         return {"doc_id": doc_id, "filename": filename, "chunk_count": len(chunks)}
 
     async def list_documents(self, user_id: str) -> list[dict]:
-        """Return a deduplicated list of documents for a user."""
-        result = await asyncio.to_thread(self._sync_get, {"user_id": user_id})
+        """Return a deduplicated list of documents for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier whose documents are
+                being listed.
+
+        Returns:
+            list[dict]: One row per logical document with filename and chunk
+            count information.
+
+        Raises:
+            RuntimeError: If Chroma is unavailable during the read path.
+        """
+        collection = await self.chroma.get_collection()
+        try:
+            result = await collection.get(where={"user_id": user_id}, include=["metadatas"])
+        except Exception as exc:
+            raise self.chroma.unavailable_error("read", exc) from exc
+
         docs: dict[str, dict] = {}
         for meta in result.get("metadatas", []):
             doc_id = meta["doc_id"]
@@ -152,23 +226,42 @@ class RAGService:
         return list(docs.values())
 
     async def delete_document(self, user_id: str, doc_id: str) -> None:
-        """Delete all chunks belonging to a document owned by the user."""
-        ids = await asyncio.to_thread(
-            self._sync_get_ids, {"user_id": user_id, "doc_id": doc_id}
-        )
-        if ids:
-            await asyncio.to_thread(self._sync_delete, ids)
-            logger.info(f"Deleted doc {doc_id} ({len(ids)} chunks) for user {user_id}")
+        """Delete all chunks belonging to a document owned by the user.
 
-    async def get_context(self, user_id: str, query: str, n_results: int = 5) -> Optional[str]:
+        Args:
+            user_id (str): Authenticated user identifier.
+            doc_id (str): Logical document identifier to remove.
+
+        Raises:
+            RuntimeError: If Chroma is unavailable during the delete path.
+        """
+        collection = await self.chroma.get_collection()
+        try:
+            ids = await self._get_ids(collection, _document_where(user_id, doc_id))
+            if ids:
+                await collection.delete(ids=ids)
+                logger.info(f"Deleted doc {doc_id} ({len(ids)} chunks) for user {user_id}")
+        except Exception as exc:
+            raise self.chroma.unavailable_error("delete", exc) from exc
+
+    async def get_context(self, user_id: str, query: str, n_results: int = 5) -> str | None:
         """Retrieve the most semantically relevant chunks for a query.
 
-        Returns None if the user has no documents.
+        Retrieval failures intentionally fail closed so chat requests can
+        continue even when the vector store is unavailable.
+
+        Args:
+            user_id (str): Authenticated user identifier used to scope search.
+            query (str): End-user prompt used for semantic retrieval.
+            n_results (int): Maximum number of document chunks to retrieve.
+
+        Returns:
+            str | None: Concatenated document context string when matches are
+            found, otherwise ``None``.
         """
         try:
-            result = await asyncio.to_thread(
-                self._sync_query, [query], n_results, {"user_id": user_id}
-            )
+            collection = await self.chroma.get_collection()
+            result = await self._query(collection, query, n_results, {"user_id": user_id})
             docs = result.get("documents", [[]])[0]
             metas = result.get("metadatas", [[]])[0]
             if not docs:
@@ -176,17 +269,8 @@ class RAGService:
             parts = [f"[Source: {m['filename']}]\n{d}" for d, m in zip(docs, metas)]
             return "\n\n---\n\n".join(parts)
         except Exception as exc:
-            logger.warning(f"RAG context retrieval failed: {exc}")
+            logger.warning(
+                f"RAG context retrieval failed against {self.chroma.endpoint}: {exc}"
+            )
+            self.chroma.reset()
             return None
-
-
-# Module-level singleton — ChromaDB client should not be recreated per request
-_rag_service: Optional[RAGService] = None
-
-
-def get_rag_service() -> RAGService:
-    """Return the shared RAGService singleton."""
-    global _rag_service
-    if _rag_service is None:
-        _rag_service = RAGService()
-    return _rag_service

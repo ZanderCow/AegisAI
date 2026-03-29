@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from src.providers import groq as _groq
 from src.providers import gemini as _gemini
 from src.providers import deepseek as _deepseek
+from src.providers import mock_provider as _mock_provider
 from src.core.config import settings
 from src.core.logger import get_logger
 
@@ -38,6 +39,8 @@ def validate_provider(provider: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown provider: {provider}",
         )
+    if settings.MOCK_PROVIDER_RESPONSES:
+        return
     _, get_key = _PROVIDER_MODULES[provider]
     if not get_key():
         raise HTTPException(
@@ -60,6 +63,12 @@ async def stream_from_provider(provider: str, model: str, messages: list[dict]):
     Yields:
         str: Text chunks from the provider's streaming response.
     """
+    if settings.MOCK_PROVIDER_RESPONSES:
+        logger.info(f"Streaming from mock provider for provider={provider} model={model}")
+        async for chunk in _mock_provider.stream(messages):
+            yield chunk
+        return
+
     module, get_key = _PROVIDER_MODULES[provider]
     api_key = get_key()
     logger.info(f"Streaming from provider={provider} model={model}")
