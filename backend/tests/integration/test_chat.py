@@ -1,23 +1,41 @@
 """Integration tests for the chat API endpoints.
 
 Tests conversation creation, message sending (with mocked provider streaming),
-message history retrieval, and cross-user access control.
+message history retrieval, and cross-user access control. Provider streaming
+is patched so these tests remain deterministic and avoid external dependencies.
 """
+from collections.abc import AsyncIterator
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from unittest.mock import patch
 
 
-async def _mock_stream(*args, **kwargs):
-    """Async generator that yields fixed chunks for testing."""
+async def _mock_stream(*args: object, **kwargs: object) -> AsyncIterator[str]:
+    """Yield deterministic assistant chunks for message streaming tests.
+
+    Args:
+        *args (object): Unused positional arguments passed by the patched call site.
+        **kwargs (object): Unused keyword arguments passed by the patched call site.
+
+    Yields:
+        str: A chunk of assistant text that simulates streamed provider output.
+    """
     for chunk in ["Hello", " world", "!"]:
         yield chunk
 
 
 @pytest_asyncio.fixture
-async def auth_headers(client: AsyncClient) -> dict:
-    """Returns auth headers for a freshly signed-up user."""
+async def auth_headers(client: AsyncClient) -> dict[str, str]:
+    """Create authorization headers for a newly registered test user.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+
+    Returns:
+        dict[str, str]: Bearer authorization headers for authenticated requests.
+    """
     resp = await client.post(
         "/api/v1/auth/signup",
         json={"email": "chatuser@test.com", "password": "password123"},
@@ -26,8 +44,15 @@ async def auth_headers(client: AsyncClient) -> dict:
 
 
 @pytest_asyncio.fixture
-async def auth_headers_2(client: AsyncClient) -> dict:
-    """Returns auth headers for a second freshly signed-up user."""
+async def auth_headers_2(client: AsyncClient) -> dict[str, str]:
+    """Create authorization headers for a second isolated test user.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+
+    Returns:
+        dict[str, str]: Bearer authorization headers for a different user account.
+    """
     resp = await client.post(
         "/api/v1/auth/signup",
         json={"email": "chatuser2@test.com", "password": "password123"},
@@ -40,7 +65,16 @@ async def auth_headers_2(client: AsyncClient) -> dict:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_create_conversation_success(client, auth_headers):
+async def test_create_conversation_success(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify an authenticated user can create a new conversation.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the requesting user.
+    """
     resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
@@ -51,7 +85,12 @@ async def test_create_conversation_success(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_requires_auth(client):
+async def test_create_conversation_requires_auth(client: AsyncClient) -> None:
+    """Verify conversation creation is blocked for unauthenticated requests.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+    """
     resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
@@ -60,7 +99,16 @@ async def test_create_conversation_requires_auth(client):
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_invalid_provider(client, auth_headers):
+async def test_create_conversation_invalid_provider(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify unsupported providers are rejected during conversation creation.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the requesting user.
+    """
     resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "openai", "model": "gpt-4"},
@@ -70,7 +118,16 @@ async def test_create_conversation_invalid_provider(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_all_three_providers_accepted(client, auth_headers):
+async def test_all_three_providers_accepted(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify every supported provider can start a conversation successfully.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the requesting user.
+    """
     for provider, model in [
         ("groq", "llama-3.3-70b-versatile"),
         ("gemini", "gemini-2.0-flash-lite"),
@@ -89,7 +146,16 @@ async def test_all_three_providers_accepted(client, auth_headers):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_get_messages_empty_for_new_conversation(client, auth_headers):
+async def test_get_messages_empty_for_new_conversation(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify a newly created conversation has no persisted messages yet.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the requesting user.
+    """
     convo_resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
@@ -106,7 +172,18 @@ async def test_get_messages_empty_for_new_conversation(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_get_messages_returns_empty_for_other_users_conversation(client, auth_headers, auth_headers_2):
+async def test_get_messages_returns_empty_for_other_users_conversation(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_headers_2: dict[str, str],
+) -> None:
+    """Verify users cannot read another user's conversation history.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the conversation owner.
+        auth_headers_2 (dict[str, str]): Authentication headers for a different user.
+    """
     convo_resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
@@ -127,7 +204,16 @@ async def test_get_messages_returns_empty_for_other_users_conversation(client, a
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_send_message_streams(client, auth_headers):
+async def test_send_message_streams(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify sending a message returns an event-stream response.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the requesting user.
+    """
     convo_resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
@@ -150,7 +236,16 @@ async def test_send_message_streams(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_send_message_saves_to_history(client, auth_headers):
+async def test_send_message_saves_to_history(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify user and assistant messages are persisted after streaming completes.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the requesting user.
+    """
     convo_resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
@@ -181,7 +276,18 @@ async def test_send_message_saves_to_history(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_send_message_to_other_users_conversation_returns_404(client, auth_headers, auth_headers_2):
+async def test_send_message_to_other_users_conversation_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_headers_2: dict[str, str],
+) -> None:
+    """Verify users cannot send messages into another user's conversation.
+
+    Args:
+        client (AsyncClient): Test client bound to the FastAPI application.
+        auth_headers (dict[str, str]): Authentication headers for the conversation owner.
+        auth_headers_2 (dict[str, str]): Authentication headers for a different user.
+    """
     convo_resp = await client.post(
         "/api/v1/chat/conversations",
         json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
