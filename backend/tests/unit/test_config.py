@@ -27,8 +27,12 @@ def test_config_loads_defaults(monkeypatch: MonkeyPatch) -> None:
     # Optional values should use defaults
     monkeypatch.delenv("ALGORITHM", raising=False)
     monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("CHROMA_HOST", raising=False)
+    monkeypatch.delenv("CHROMA_PORT", raising=False)
+    monkeypatch.delenv("CHROMA_SSL", raising=False)
+    monkeypatch.delenv("CHROMA_COLLECTION_NAME", raising=False)
     
-    settings = Settings()
+    settings = Settings(_env_file=None)
     
     assert settings.PROJECT_NAME == "FastAPI Auth API"
     assert settings.DATABASE_URL == "sqlite+aiosqlite:///:memory:"
@@ -36,6 +40,11 @@ def test_config_loads_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.ALGORITHM == "HS256"
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30
     assert settings.ENVIRONMENT == "development"
+    assert settings.MOCK_PROVIDER_RESPONSES is False
+    assert settings.CHROMA_HOST == "localhost"
+    assert settings.CHROMA_PORT == 8000
+    assert settings.CHROMA_SSL is False
+    assert settings.CHROMA_COLLECTION_NAME == "rag_documents"
 
 def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
     """Tests overriding default settings via environment variables.
@@ -52,13 +61,23 @@ def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("ALGORITHM", "HS512")
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("MOCK_PROVIDER_RESPONSES", "true")
+    monkeypatch.setenv("CHROMA_HOST", "chroma.internal")
+    monkeypatch.setenv("CHROMA_PORT", "8443")
+    monkeypatch.setenv("CHROMA_SSL", "true")
+    monkeypatch.setenv("CHROMA_COLLECTION_NAME", "custom_collection")
     
-    settings = Settings()
+    settings = Settings(_env_file=None)
     
     assert settings.PROJECT_NAME == "Custom Testing App"
     assert settings.ALGORITHM == "HS512"
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 60
     assert settings.ENVIRONMENT == "production"
+    assert settings.MOCK_PROVIDER_RESPONSES is True
+    assert settings.CHROMA_HOST == "chroma.internal"
+    assert settings.CHROMA_PORT == 8443
+    assert settings.CHROMA_SSL is True
+    assert settings.CHROMA_COLLECTION_NAME == "custom_collection"
 
 def test_config_validation_error_missing_db(monkeypatch: MonkeyPatch) -> None:
     """Tests Pydantic validation when DATABASE_URL is missing.
@@ -71,9 +90,9 @@ def test_config_validation_error_missing_db(monkeypatch: MonkeyPatch) -> None:
     """
     monkeypatch.setenv("SECRET_KEY", "some_key")
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    
+
     with pytest.raises(ValidationError) as exc_info:
-        Settings()
+        Settings(_env_file=None)
         
     error_msg = str(exc_info.value)
     assert "DATABASE_URL" in error_msg
@@ -90,9 +109,9 @@ def test_config_validation_error_missing_secret_key(monkeypatch: MonkeyPatch) ->
     """
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     monkeypatch.delenv("SECRET_KEY", raising=False)
-    
+
     with pytest.raises(ValidationError) as exc_info:
-        Settings()
+        Settings(_env_file=None)
         
     error_msg = str(exc_info.value)
     assert "SECRET_KEY" in error_msg

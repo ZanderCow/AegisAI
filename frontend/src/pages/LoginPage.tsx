@@ -1,90 +1,48 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
-import { Card } from '../components/ui/Card';
-import { Input } from '../components/ui/Input';
-import { Button } from '../components/ui/Button';
+import { Navigate, useNavigate, Link } from 'react-router';
+import { useAuth } from '@/hooks/useAuth';
+import { LoginForm } from '@/components/forms/LoginForm';
+import { Card } from '@/components/ui';
 
-/**
- * Renders the login page where existing users can authenticate.
- * Captures email and password, sending them to the backend API, and manages
- * local token storage.
- *
- * @returns The rendered LoginPage component.
- */
 export function LoginPage() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
-    const navigate = useNavigate();
+  const { isAuthenticated, login } = useAuth();
+  const navigate = useNavigate();
+  const [error, setError] = useState('');
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        setLoading(true);
+  if (isAuthenticated) {
+    return <Navigate to="/chat" replace />;
+  }
 
-        try {
-            const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const response = await axios.post(`${backendUrl}/api/v1/auth/login`, {
-                email,
-                password,
-            });
-            const token = response.data.access_token;
-            localStorage.setItem('token', token);
-            navigate('/');
-        } catch (err: unknown) {
-            const error = err as any;
-            setError(error.response?.data?.detail || 'Failed to login');
-        } finally {
-            setLoading(false);
-        }
-    };
+  const handleLogin = async (email: string, password: string) => {
+    setError('');
+    try {
+      await login(email, password);
+      navigate('/chat', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    }
+  };
 
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-950 to-aegis-950 py-12 px-4 sm:px-6 lg:px-8 text-white">
-            <Card className="w-full max-w-md bg-gray-900 text-white">
-                <div className="text-center mb-8">
-                    <img src="/aegis_logo.png" alt="Aegis AI Logo" className="w-24 h-24 mx-auto mb-4 rounded-xl shadow-lg border border-purple-500/30" />
-                    <h2 className="text-3xl font-extrabold text-white">
-                        Sign in to your account
-                    </h2>
-                </div>
-                <form onSubmit={handleLogin} className="space-y-6">
-                    {error && (
-                        <div className="bg-red-50 text-red-500 p-3 rounded-md text-sm">
-                            {error}
-                        </div>
-                    )}
-                    <Input
-                        label="Email address"
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="Email address"
-                    />
-                    <Input
-                        label="Password"
-                        type="password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Password"
-                    />
-                    <Button type="submit" className="w-full" disabled={loading}>
-                        {loading ? 'Signing in...' : 'Sign in'}
-                    </Button>
-                </form>
-                <div className="mt-6 text-center">
-                    <p className="text-sm text-gray-400">
-                        Don't have an account?{' '}
-                        <Link to="/signup" className="font-medium text-aegis-400 hover:text-aegis-300">
-                            Sign up
-                        </Link>
-                    </p>
-                </div>
-            </Card>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-950 to-aegis-950 px-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-white">AegisAI</h1>
+          <p className="mt-2 text-aegis-300">Secure RAG-powered enterprise assistant</p>
         </div>
-    );
+        <Card>
+          <h2 className="text-xl font-semibold text-gray-100 mb-6">Sign in to your account</h2>
+          <LoginForm onSubmit={handleLogin} error={error} />
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-400">
+              Don't have an account?{' '}
+              <Link to="/signup" className="font-medium text-aegis-400 hover:text-aegis-300">
+                Sign up
+              </Link>
+            </p>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
 }

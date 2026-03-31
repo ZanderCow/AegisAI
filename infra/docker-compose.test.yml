@@ -1,0 +1,102 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chroma:
+    image: chromadb/chroma:1.5.5
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_test_data:/data
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
+      SECRET_KEY: test_secret_key_for_e2e_tests_only
+      ALGORITHM: HS256
+      ENVIRONMENT: development
+      GROQ_API_KEY: ""
+      GEMINI_API_KEY: ""
+      DEEPSEEK_API_KEY: ""
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_SSL: "false"
+      CHROMA_COLLECTION_NAME: rag_documents
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+
+  backend-test:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    volumes:
+      - test_results:/results
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
+      SECRET_KEY: test_secret_key_for_e2e_tests_only
+      ALGORITHM: HS256
+      ENVIRONMENT: test
+      GROQ_API_KEY: "test-key-placeholder"
+      GEMINI_API_KEY: "test-key-placeholder"
+      DEEPSEEK_API_KEY: "test-key-placeholder"
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_SSL: "false"
+      CHROMA_COLLECTION_NAME: rag_documents
+    command:
+      [
+        "sh",
+        "-c",
+        "uv run pytest tests/; code=$$?; echo $$code > /results/backend-test.exit; touch /results/backend-test.done; tail -f /dev/null",
+      ]
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /results/backend-test.done ]"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    depends_on:
+      db:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+
+  frontend-test:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - test_results:/results
+    command:
+      [
+        "sh",
+        "-c",
+        "code=$$(cat /results/backend-test.exit); if [ \"$$code\" -ne 0 ]; then echo \"Backend tests failed with code $$code\"; exit \"$$code\"; fi; npm run test -- --run",
+      ]
+    depends_on:
+      backend-test:
+        condition: service_healthy
+
+volumes:
+  chroma_test_data:
+  test_results:

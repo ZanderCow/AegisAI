@@ -9,7 +9,10 @@ from contextlib import asynccontextmanager
 
 from src.core.database import engine
 from src.models.user_model import Base
+from src.models import conversation_model as _conversation_model  # noqa: F401
 from src.api.v1.endpoints import auth
+from src.api.v1.endpoints import chat
+from src.api.v1.endpoints import rag
 from src.core.logger import get_logger
 
 logger = get_logger("MAIN")
@@ -35,14 +38,40 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application, disposing database connections...")
     await engine.dispose()
 
-app = FastAPI(title="Authentication API", lifespan=lifespan)
+app = FastAPI(
+    title="AegisAI API",
+    description="Auth and chat endpoints. Use **Authorize** (Bearer token) for `/api/v1/chat/**` after signing up or logging in.",
+    lifespan=lifespan,
+)
+
+
+@app.get("/")
+async def root() -> dict[str, str]:
+    """Service root — browsers often open `/` first; API routes live under `/api/v1`."""
+    return {
+        "service": "AegisAI API",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+        "api": "/api/v1",
+    }
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    """Liveness probe for Docker and quick manual checks."""
+    return {"status": "ok"}
+
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # JWT is sent via Authorization header / localStorage, not cookies — pairing
+    # allow_credentials=True with allow_origins=["*"] breaks CORS in real browsers.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
+app.include_router(rag.router, prefix="/api/v1")

@@ -18,13 +18,13 @@ test.describe('Signup flow', () => {
         await page.locator('button[type="submit"]').click();
 
         try {
-            // Wait for navigation / redirect to the root page
-            await page.waitForURL('/', { timeout: 3000 });
-            const token = await page.evaluate(() => localStorage.getItem('token'));
+            // Wait for navigation / redirect to /chat
+            await page.waitForURL('/chat', { timeout: 3000 });
+            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
             expect(token).toBeTruthy();
         } catch (e) {
             // If auth setup is incomplete or fails, assert that an error renders
-            const errorMsg = page.locator('.bg-red-50.text-red-500');
+            const errorMsg = page.locator('.bg-red-900\\/30.text-red-400');
             await expect(errorMsg).toBeVisible();
         }
     });
@@ -44,11 +44,11 @@ test.describe('Signup flow', () => {
 
         // The backend should block the duplicate email, returning an error response
         try {
-            const errorMsg = page.locator('.bg-red-50.text-red-500').first();
+            const errorMsg = page.locator('.bg-red-900\\/30.text-red-400').first();
             await expect(errorMsg).toBeVisible({ timeout: 5000 });
         } catch (e) {
             // Allowed duplicate (backend is extremely permissive). Ensure token exists mapping to redirection
-            const token = await page.evaluate(() => localStorage.getItem('token'));
+            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
             expect(token).toBeTruthy();
         }
     });

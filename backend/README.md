@@ -1,6 +1,7 @@
 # Backend API
 
-This is a FastAPI-based backend application with built-in JWT authentication and SQLAlchemy database integration.
+This is a FastAPI-based backend application with built-in JWT authentication,
+SQLAlchemy integration, and a Chroma-backed RAG document store.
 
 ## Prerequisites
 - Python 3.10+
@@ -42,7 +43,30 @@ We use [uv](https://github.com/astral-sh/uv), the blazing-fast Python package ma
    ALGORITHM="HS256"
    ACCESS_TOKEN_EXPIRE_MINUTES=30
    ENVIRONMENT="development"  # Set to "production" to enable logging
+   CHROMA_HOST="localhost"
+   CHROMA_PORT=8001
+   CHROMA_SSL=false
+   CHROMA_COLLECTION_NAME="rag_documents"
    ```
+
+## Chroma Configuration
+
+The backend now connects to Chroma over HTTP instead of using embedded local
+storage. For local host-based development, point `CHROMA_HOST` and
+`CHROMA_PORT` at your running Chroma server. For Docker Compose development,
+the compose files set these automatically to the internal `chroma` service.
+
+To point the same backend code at a hosted Chroma deployment later, only
+change the connection variables. For example:
+
+```env
+CHROMA_HOST="your-chroma-hostname"
+CHROMA_PORT=443
+CHROMA_SSL=true
+CHROMA_COLLECTION_NAME="rag_documents"
+```
+
+`CHROMA_PATH` is no longer the primary runtime configuration for the backend.
 
 ## Running the Application
 
@@ -51,6 +75,10 @@ To start the FastAPI development server using `uv`:
 uv run uvicorn src.main:app --reload
 ```
 The API documentation will be available at `http://127.0.0.1:8000/docs`.
+
+If you want the RAG endpoints to work while running the backend directly on
+your host, make sure a Chroma server is reachable at the `CHROMA_*` endpoint
+you configured above.
 
 ## Running Tests
 

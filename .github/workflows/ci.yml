@@ -2,130 +2,78 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
   push:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  backend-unit:
-    name: Backend Unit Tests
+  compose-tests:
+    name: Unit & Integration Tests (Compose)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv pip install --system -r pyproject.toml
-
-      - name: Run unit tests
-        run: python -m pytest tests/unit -v
-
-  backend-integration:
-    name: Backend Integration Tests
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: aegis_test_db
-          POSTGRES_USER: test_admin
-          POSTGRES_PASSWORD: test_password
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U test_admin -d aegis_test_db"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgresql+asyncpg://test_admin:test_password@localhost:5433/aegis_test_db
-      ENVIRONMENT: development
-      AUTO_CREATE_TABLES: 'true'
-      SQL_ECHO: 'false'
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv pip install --system -r pyproject.toml
-
-      - name: Run integration tests
-        run: python -m pytest tests/integration -v
-
-  frontend-quality:
-    name: Frontend Lint and Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      # - name: Lint
-      #   run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-  e2e-compose:
-    name: E2E Auth (Playwright + Compose)
-    runs-on: ubuntu-latest
-    needs:
-      - backend-unit
-      - backend-integration
-      - frontend-quality
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Start stack and run e2e compose tests
-        run: docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
+      - name: Run compose test suite
+        run: docker compose -f infra/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-test
 
       - name: Capture Compose logs on failure
         if: failure()
-        run: docker compose -f infra/docker-compose.e2e.yml logs --no-color > compose-logs.txt
+        run: docker compose -f infra/docker-compose.test.yml logs --no-color > compose-test-logs.txt
 
       - name: Upload Compose logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: compose-logs
-          path: compose-logs.txt
+          name: compose-test-logs
+          path: compose-test-logs.txt
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f infra/docker-compose.test.yml down --volumes --remove-orphans
+
+  e2e-compose:
+    name: E2E Tests (Playwright + Compose)
+    runs-on: ubuntu-latest
+    needs:
+      - compose-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate E2E provider secrets
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -n "$GROQ_API_KEY" ] || [ -n "$GEMINI_API_KEY" ] || [ -n "$DEEPSEEK_API_KEY" ]; then
+            exit 0
+          fi
+
+          echo "Missing E2E provider secret."
+          echo "Set one of GROQ_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY in repository secrets."
+          exit 1
+
+      - name: Run E2E compose tests
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
+
+      - name: Capture Compose logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.e2e.yml logs --no-color > compose-e2e-logs.txt
+
+      - name: Upload Compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-e2e-logs
+          path: compose-e2e-logs.txt
 
       - name: Tear down stack
         if: always()
