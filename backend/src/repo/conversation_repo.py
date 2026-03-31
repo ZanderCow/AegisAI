@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from src.models.conversation_model import Conversation, Message
+from src.models.conversation_model import Alarm, Conversation, Message
 from src.core.logger import get_logger
 
 logger = get_logger("CONVERSATION_REPOSITORY")
@@ -103,6 +103,23 @@ class ConversationRepository:
         await self.session.refresh(msg)
         logger.info(f"Message added: {msg.id}")
         return msg
+
+    async def add_alarm(self, message_id: uuid.UUID, reason: str) -> Alarm:
+        """Inserts an alarm record for a flagged message.
+
+        Args:
+            message_id (uuid.UUID): The UUID of the flagged message.
+            reason (str): Description of why the message was flagged.
+
+        Returns:
+            Alarm: The newly created Alarm record.
+        """
+        logger.info(f"Recording alarm for message {message_id}: {reason}")
+        alarm = Alarm(message_id=message_id, reason=reason)
+        self.session.add(alarm)
+        await self.session.commit()
+        await self.session.refresh(alarm)
+        return alarm
 
     async def get_messages(self, conversation_id: uuid.UUID) -> list[Message]:
         """Retrieves all messages for a conversation ordered by creation time.

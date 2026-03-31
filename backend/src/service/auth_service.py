@@ -53,7 +53,7 @@ class AuthService:
         
         logger.info(f"User created successfully: {new_user.id}")
         # 'sub' is the standard subject claim representing the user ID
-        token = create_token({"sub": str(new_user.id), "email": new_user.email})
+        token = create_token({"sub": str(new_user.id), "email": new_user.email, "role": new_user.role})
         return TokenResponse(access_token=token, token_type="bearer")
 
     async def login(self, request: LoginRequest) -> TokenResponse:
@@ -81,5 +81,5 @@ class AuthService:
             )
             
         logger.info(f"Login successful for user: {user.id}")
-        token = create_token({"sub": str(user.id), "email": user.email})
+        token = create_token({"sub": str(user.id), "email": user.email, "role": user.role})
         return TokenResponse(access_token=token, token_type="bearer")

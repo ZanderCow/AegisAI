@@ -95,3 +95,31 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     return user_id
+
+
+async def get_current_user_with_role(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[str, str]:
+    """Extracts the authenticated user's ID and role from a Bearer token.
+
+    Returns:
+        tuple[str, str]: (user_id, role) extracted from the JWT payload.
+
+    Raises:
+        HTTPException: 401 if the token is expired, invalid, or the user no longer exists.
+    """
+    from src.repo.user_repo import UserRepository
+
+    payload = decode_token(credentials.credentials)
+    user_id = payload.get("sub")
+    if user_id is None:
+        logger.warning("JWT payload missing 'sub' claim")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    user = await UserRepository(db).get_by_id(user_id)
+    if user is None:
+        logger.warning(f"JWT references non-existent user {user_id}")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user_id, user.role

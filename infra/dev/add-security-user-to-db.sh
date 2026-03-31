@@ -26,7 +26,7 @@ print("Backend did not become healthy in time.", file=sys.stderr)
 sys.exit(1)
 PY
 
-echo "Seeding dev admin user..."
+echo "Seeding dev security user..."
 python - <<'PY'
 import asyncio
 import os
@@ -40,16 +40,16 @@ from src.security.password import hash_password
 async def main() -> int:
     raw_database_url = os.environ["DATABASE_URL"]
     database_url = raw_database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-    email = os.environ["ADMIN_EMAIL"]
-    password = os.environ["ADMIN_PASSWORD"]
+    email = os.environ["SECURITY_EMAIL"]
+    password = os.environ["SECURITY_PASSWORD"]
 
     conn = await asyncpg.connect(database_url)
     try:
         row = await conn.fetchrow(
             """
             INSERT INTO users (id, email, hashed_password, role)
-            VALUES ($1, $2, $3, 'admin')
-            ON CONFLICT (email) DO UPDATE SET role = 'admin'
+            VALUES ($1, $2, $3, 'security')
+            ON CONFLICT (email) DO UPDATE SET role = 'security'
             RETURNING id
             """,
             uuid.uuid4(),
@@ -60,10 +60,10 @@ async def main() -> int:
         await conn.close()
 
     if row is None:
-        print(f"admin user already exists: {email}")
+        print(f"security user already exists: {email}")
         return 0
 
-    print(f"created admin user: {email}")
+    print(f"created security user: {email}")
     return 0
 
 

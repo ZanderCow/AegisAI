@@ -21,7 +21,7 @@ from src.schemas.chat_schema import (
 from src.repo.conversation_repo import ConversationRepository
 from src.service.chat_service import ChatService
 from src.service.rag_service import RAGService
-from src.security.jwt import get_current_user
+from src.security.jwt import get_current_user, get_current_user_with_role
 from src.providers import validate_provider
 from src.core.logger import get_logger
 
@@ -92,7 +92,7 @@ async def send_message(
     conversation_id: str,
     request: SendMessageRequest,
     service: ChatService = Depends(get_chat_service),
-    user_id: str = Depends(get_current_user),
+    current_user: tuple[str, str] = Depends(get_current_user_with_role),
 ):
     """Send a message and receive a streaming AI response via Server-Sent Events.
 
@@ -113,12 +113,13 @@ async def send_message(
         StreamingResponse: Server-sent event stream of assistant response
         chunks followed by a terminal done event.
     """
+    user_id, user_role = current_user
     logger.info(f"Received send message request for conversation {conversation_id}")
     convo = await service.get_conversation_or_404(conversation_id, user_id)
     validate_provider(convo.provider)
 
     async def event_stream():
-        async for chunk in service.stream_response(convo, request.content):
+        async for chunk in service.stream_response(convo, request.content, user_role=user_role):
             yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
         yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
 

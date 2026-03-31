@@ -4,20 +4,26 @@ import { useAuth } from '@/hooks/useAuth';
 import { LoginForm } from '@/components/forms/LoginForm';
 import { Card } from '@/components/ui';
 
+function homeRoute(role?: string): string {
+  if (role === 'security') return '/security/dashboard';
+  if (role === 'admin') return '/admin/dashboard';
+  return '/chat';
+}
+
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, user } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
 
   if (isAuthenticated) {
-    return <Navigate to="/chat" replace />;
+    return <Navigate to={homeRoute(user?.role)} replace />;
   }
 
   const handleLogin = async (email: string, password: string) => {
     setError('');
     try {
-      await login(email, password);
-      navigate('/chat', { replace: true });
+      const loggedInUser = await login(email, password);
+      navigate(homeRoute(loggedInUser.role), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     }

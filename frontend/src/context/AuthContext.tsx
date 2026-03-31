@@ -3,8 +3,8 @@ import type { AuthState, User, UserRole } from '@/types';
 import { authService } from '@/services';
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
+  signup: (email: string, password: string) => Promise<User>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
 }
@@ -45,16 +45,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<User> => {
     const { token, user } = await authService.login(email, password);
     localStorage.setItem('aegis_token', token);
     setState({ user, isAuthenticated: true, isLoading: false });
+    return user;
   }, []);
 
-  const signup = useCallback(async (email: string, password: string) => {
+  const signup = useCallback(async (email: string, password: string): Promise<User> => {
     const { token, user } = await authService.signup(email, password);
     localStorage.setItem('aegis_token', token);
     setState({ user, isAuthenticated: true, isLoading: false });
+    return user;
   }, []);
 
   const logout = useCallback(() => {

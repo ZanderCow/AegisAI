@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
   email         VARCHAR(320) NOT NULL UNIQUE,
   hashed_password VARCHAR(255) NOT NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  role              VARCHAR(20) NOT NULL DEFAULT 'user'
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
@@ -39,4 +40,4 @@ CREATE TABLE IF NOT EXISTS alarm (
 
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations (user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages (conversation_id);
-CREATE INDEX IF NOT EXISTS idx_alarms_message_id ON alarms (message_id);
+CREATE INDEX IF NOT EXISTS idx_alarms_message_id ON alarm (message_id);
