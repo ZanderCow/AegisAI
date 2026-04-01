@@ -15,6 +15,7 @@ set -Eeuo pipefail
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly DEPLOY_TIMEOUT_SECONDS=900
 readonly DEPLOY_POLL_INTERVAL_SECONDS=10
+readonly DEPLOY_REF="${INPUT_DEPLOY_REF:-${GITHUB_REF_NAME:-unknown}}"
 readonly CREATE_MISSING_SERVICES="${INPUT_CREATE_MISSING_SERVICES:-no}"
 readonly BACKEND_ALGORITHM="${BACKEND_ALGORITHM:-HS256}"
 readonly CHROMA_COLLECTION_NAME="${CHROMA_COLLECTION_NAME:-rag_documents}"
@@ -76,12 +77,6 @@ require_value() {
 
   if [[ -z "${!name:-}" ]]; then
     fail "Missing required GitHub secret: ${name}"
-  fi
-}
-
-require_main_branch() {
-  if [[ "${GITHUB_REF_NAME:-}" != "main" ]]; then
-    fail "This workflow only deploys from main. Open the workflow on the main branch before running it."
   fi
 }
 
@@ -356,9 +351,14 @@ deploy_path() {
 }
 
 write_summary() {
+  local deploy_commit
+
+  deploy_commit="$(git rev-parse --short HEAD)"
+
   add_summary "## Railway deploy"
   add_summary ""
-  add_summary "- Branch: \`main\`"
+  add_summary "- Ref: \`${DEPLOY_REF}\`"
+  add_summary "- Commit: \`${deploy_commit}\`"
   add_summary "- Bootstrap repo-backed services: \`${CREATE_MISSING_SERVICES}\`"
   add_summary "- Deploy order: \`chroma -> backend -> frontend\`"
 
@@ -374,9 +374,10 @@ write_summary() {
 }
 
 main() {
-  require_main_branch
   validate_inputs
   railway_link_project
+
+  notice "Deploying Railway services from ref '${DEPLOY_REF}'."
 
   if ! service_exists "${RAILWAY_POSTGRES_SERVICE}"; then
     fail "Managed Railway Postgres service '${RAILWAY_POSTGRES_SERVICE}' does not exist. Create it first, then rerun this workflow."

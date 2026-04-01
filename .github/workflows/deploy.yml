@@ -3,6 +3,11 @@ name: Deploy Railway
 on:
   workflow_dispatch:
     inputs:
+      deploy_ref:
+        description: "Branch, tag, or commit SHA to deploy"
+        required: true
+        type: string
+        default: "main"
       create_missing_services:
         description: "Create missing repo-backed Railway services on this run"
         required: true
@@ -16,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-railway-main
+  group: deploy-railway
   cancel-in-progress: true
 
 jobs:
@@ -25,14 +30,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout
+      - name: Checkout selected ref
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.deploy_ref }}
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
       - name: Deploy backend, chroma, and frontend
         env:
+          INPUT_DEPLOY_REF: ${{ github.event.inputs.deploy_ref }}
           INPUT_CREATE_MISSING_SERVICES: ${{ github.event.inputs.create_missing_services }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           RAILWAY_PROJECT: ${{ secrets.RAILWAY_PROJECT }}
