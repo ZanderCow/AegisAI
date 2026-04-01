@@ -5,7 +5,7 @@ including database connections, security tokens, and the remote Chroma
 server used by the RAG pipeline. These settings are loaded from
 environment variables or a local .env file using Pydantic.
 """
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     )
     DATABASE_URL: str = Field(
         ...,
-        description="The PostgreSQL connection string using asyncpg.",
+        description=(
+            "Database connection string. Standard PostgreSQL URLs are normalized "
+            "to the asyncpg driver automatically."
+        ),
     )
     SECRET_KEY: str = Field(
         ...,
@@ -35,6 +38,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = Field(
         default="development",
         description="The current environment (e.g., development, production, testing).",
+    )
+    AUTO_CREATE_TABLES: bool | None = Field(
+        default=None,
+        description=(
+            "When true, create SQL tables automatically on application startup. "
+            "Defaults to enabled outside production and disabled in production."
+        ),
     )
     GROQ_API_KEY: str = Field(default="", description="Groq API key for LLM access.")
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key for LLM access.")
@@ -62,6 +72,34 @@ class Settings(BaseSettings):
         default="rag_documents",
         description="Collection name used for RAG document storage.",
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        """Normalize Railway-style PostgreSQL URLs to the asyncpg dialect."""
+        if not isinstance(value, str):
+            return value
+
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1)
+
+        return value
+
+    @model_validator(mode="after")
+    def apply_environment_defaults(self) -> "Settings":
+        """Apply environment-aware defaults after base field parsing.
+
+        Production should not mutate schema automatically during startup.
+        Development and testing keep the current convenient bootstrap behavior
+        unless explicitly overridden with ``AUTO_CREATE_TABLES``.
+        """
+        if self.AUTO_CREATE_TABLES is None:
+            self.AUTO_CREATE_TABLES = self.ENVIRONMENT.lower() != "production"
+
+        return self
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

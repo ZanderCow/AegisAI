@@ -80,6 +80,3 @@ Share this file as-is with anyone reviewing the API or running the stack.
 ### Postman / curl vs Swagger for chat
 
 - **SSE** streaming is easier to inspect with **Postman** or **curl** than with Swagger **Try it out**.
-
----
-
