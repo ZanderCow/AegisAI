@@ -5,7 +5,7 @@ including database connections, security tokens, and the remote Chroma
 server used by the RAG pipeline. These settings are loaded from
 environment variables or a local .env file using Pydantic.
 """
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     )
     DATABASE_URL: str = Field(
         ...,
-        description="The PostgreSQL connection string using asyncpg.",
+        description=(
+            "Database connection string. Standard PostgreSQL URLs are normalized "
+            "to the asyncpg driver automatically."
+        ),
     )
     SECRET_KEY: str = Field(
         ...,
@@ -62,6 +65,21 @@ class Settings(BaseSettings):
         default="rag_documents",
         description="Collection name used for RAG document storage.",
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        """Normalize Railway-style PostgreSQL URLs to the asyncpg dialect."""
+        if not isinstance(value, str):
+            return value
+
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1)
+
+        return value
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

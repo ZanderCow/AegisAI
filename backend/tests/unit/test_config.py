@@ -79,6 +79,15 @@ def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.CHROMA_SSL is True
     assert settings.CHROMA_COLLECTION_NAME == "custom_collection"
 
+def test_config_normalizes_standard_postgres_url(monkeypatch: MonkeyPatch) -> None:
+    """Tests Railway-style PostgreSQL URLs are normalized for async SQLAlchemy."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@db.railway.internal:5432/auth_db")
+    monkeypatch.setenv("SECRET_KEY", "custom_key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.DATABASE_URL == "postgresql+asyncpg://user:pass@db.railway.internal:5432/auth_db"
+
 def test_config_validation_error_missing_db(monkeypatch: MonkeyPatch) -> None:
     """Tests Pydantic validation when DATABASE_URL is missing.
     
