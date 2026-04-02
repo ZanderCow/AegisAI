@@ -1,4 +1,4 @@
-import { createContext, useCallback, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Conversation, Message } from '@/types';
 import { chatService } from '@/services';
 
@@ -24,8 +24,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
+  useEffect(() => {
+    const token = localStorage.getItem('aegis_token');
+    if (!token) {
+      setConversations([]);
+      setCurrentConversation(null);
+      setMessages([]);
+    }
+  }, []);
+
   const loadConversations = useCallback(() => {
     setConversations(chatService.getConversations());
+    setCurrentConversation(null);
+    setMessages([]);
   }, []);
 
   const selectConversation = useCallback(async (conversation: Conversation) => {
