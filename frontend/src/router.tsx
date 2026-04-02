@@ -28,8 +28,13 @@ export function AppRouter() {
           {/* Chat - accessible to user, admin */}
           <Route element={<RoleGuard allowedRoles={['user', 'admin']} />}>
             <Route path="/chat" element={<ChatPage />} />
+          </Route>
+
+          {/* RAG documents accesible to everyone */}
+          <Route element={<RoleGuard allowedRoles={['user', 'admin', 'security']} />}>
             <Route path="/documents" element={<RagDocumentsPage />} />
           </Route>
+
 
           {/* Admin routes */}
           <Route element={<RoleGuard allowedRoles={['admin']} />}>
@@ -41,7 +46,6 @@ export function AppRouter() {
 
           {/* Security routes */}
           <Route element={<RoleGuard allowedRoles={['admin', 'security']} />}>
-            <Route path="/documents" element={<RagDocumentsPage />} />
             <Route path="/admin/security" element={<SecurityPage />} />
             <Route path="/security/dashboard" element={<SecurityDashboardPage />} />
             <Route path="/security/documents" element={<SecurityDocumentsPage />} />
