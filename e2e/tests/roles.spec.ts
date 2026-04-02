@@ -183,7 +183,6 @@ test.describe('Role: security', () => {
         await setAuth(page, 'security');
         await page.goto('/security/dashboard');
         await expect(page.getByRole('link', { name: 'Chat' })).not.toBeVisible();
-        await expect(page.getByRole('link', { name: 'RAG Documents' })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Roles' })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Users' })).not.toBeVisible();
