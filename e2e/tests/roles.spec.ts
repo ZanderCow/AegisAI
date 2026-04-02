@@ -68,7 +68,7 @@ test.describe('Role: user', () => {
     test('sidebar does not show admin or security items', async ({ page }) => {
         await setAuth(page, 'user');
         await page.goto('/chat');
-        await expect(page.getByRole('link', { name: 'Dashboard' })).not.toBeVisible();
+        await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Security Logs' })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Security Dashboard' })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Document Access' })).not.toBeVisible();
@@ -127,7 +127,7 @@ test.describe('Role: admin', () => {
         await page.goto('/chat');
         await expect(page.getByRole('link', { name: 'Chat' })).toBeVisible();
         await expect(page.getByRole('link', { name: 'RAG Documents' })).toBeVisible();
-        await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Roles' })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Users' })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Security Logs' })).toBeVisible();
@@ -184,7 +184,7 @@ test.describe('Role: security', () => {
         await page.goto('/security/dashboard');
         await expect(page.getByRole('link', { name: 'Chat' })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'RAG Documents' })).not.toBeVisible();
-        await expect(page.getByRole('link', { name: 'Dashboard' })).not.toBeVisible();
+        await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Roles' })).not.toBeVisible();
         await expect(page.getByRole('link', { name: 'Users' })).not.toBeVisible();
     });
