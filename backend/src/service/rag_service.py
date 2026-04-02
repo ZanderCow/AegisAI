@@ -130,9 +130,10 @@ class RAGService:
             metadata lists.
         """
         # Non-privileged users only see non-restricted chunks
-        effective_where = dict(where)
         if not include_restricted:
-            effective_where["restricted"] = False
+            effective_where = {"$and": [where, {"restricted": False}]}
+        else:
+            effective_where = dict(where)
 
         # n_results must not exceed the number of docs in the filtered set
         ids_in_scope = await self._get_ids(collection, effective_where)
