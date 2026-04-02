@@ -28,8 +28,8 @@ async def test_rag_service_lists_documents_from_collection_metadata() -> None:
     documents = await rag.list_documents("user-123")
 
     assert documents == [
-        {"doc_id": "doc-1", "filename": "handbook.pdf", "chunk_count": 2},
-        {"doc_id": "doc-2", "filename": "policy.pdf", "chunk_count": 1},
+        {"doc_id": "doc-1", "filename": "handbook.pdf", "chunk_count": 2, "restricted": False},
+        {"doc_id": "doc-2", "filename": "policy.pdf", "chunk_count": 1, "restricted": False},
     ]
     chroma.get_collection.assert_awaited_once()
     collection.get.assert_awaited_once_with(
