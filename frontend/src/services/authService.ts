@@ -1,6 +1,5 @@
 import type { User } from '@/types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/config/api';
 
 function decodeJwtUser(token: string): User {
   const payload = JSON.parse(atob(token.split('.')[1]));

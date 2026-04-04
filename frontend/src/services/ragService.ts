@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_URL } from '@/config/api';
 
 function getToken(): string {
   return localStorage.getItem('aegis_token') || '';
