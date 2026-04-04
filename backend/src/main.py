@@ -18,6 +18,7 @@ from src.core.logger import get_logger
 
 logger = get_logger("MAIN")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Event lifecycle context manager handling startup and shutdown routines.
@@ -69,15 +70,19 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    # JWT is sent via Authorization header / localStorage, not cookies — pairing
-    # allow_credentials=True with allow_origins=["*"] breaks CORS in real browsers.
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def get_cors_middleware_kwargs() -> dict[str, object]:
+    """Build the CORS middleware configuration from environment-backed settings."""
+    return {
+        "allow_origins": settings.CORS_ALLOWED_ORIGINS,
+        # JWT is sent via Authorization headers / localStorage rather than cookies,
+        # so credentials support is unnecessary for the current frontend flow.
+        "allow_credentials": False,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }
+
+
+app.add_middleware(CORSMiddleware, **get_cors_middleware_kwargs())
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")

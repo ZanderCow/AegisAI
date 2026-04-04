@@ -5,8 +5,17 @@ including database connections, security tokens, and the remote Chroma
 server used by the RAG pipeline. These settings are loaded from
 environment variables or a local .env file using Pydantic.
 """
+import json
+from typing import Annotated
+
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_DEFAULT_CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://frontend:5173",
+]
 
 
 class Settings(BaseSettings):
@@ -38,6 +47,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = Field(
         default="development",
         description="The current environment (e.g., development, production, testing).",
+    )
+    CORS_ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: _DEFAULT_CORS_ALLOWED_ORIGINS.copy(),
+        description=(
+            "Browser origins allowed to call the API via CORS. Accepts a "
+            "comma-separated string or JSON array."
+        ),
     )
     AUTO_CREATE_TABLES: bool | None = Field(
         default=None,
@@ -87,6 +103,23 @@ class Settings(BaseSettings):
             return value.replace("postgres://", "postgresql+asyncpg://", 1)
 
         return value
+
+    @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def normalize_cors_allowed_origins(cls, value: str | list[str]) -> list[str]:
+        """Normalize CORS origins from env-friendly strings to a clean list."""
+        if isinstance(value, list):
+            return [origin.strip() for origin in value if origin.strip()]
+
+        if not isinstance(value, str):
+            return value
+
+        stripped = value.strip()
+        if stripped.startswith("["):
+            parsed = json.loads(stripped)
+            return [origin.strip() for origin in parsed if origin.strip()]
+
+        return [origin.strip() for origin in stripped.split(",") if origin.strip()]
 
     @model_validator(mode="after")
     def apply_environment_defaults(self) -> "Settings":

@@ -64,3 +64,21 @@ async def test_lifespan_skips_table_creation_when_disabled(
         "Automatic schema creation is disabled for environment '%s'.",
         "production",
     )
+
+
+def test_get_cors_middleware_kwargs_uses_settings_origins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify FastAPI CORS middleware is driven by configured browser origins."""
+    monkeypatch.setattr(
+        main,
+        "settings",
+        SimpleNamespace(CORS_ALLOWED_ORIGINS=["http://localhost:5173"]),
+    )
+
+    assert main.get_cors_middleware_kwargs() == {
+        "allow_origins": ["http://localhost:5173"],
+        "allow_credentials": False,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }

@@ -2,13 +2,14 @@ services:
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: auth_db
+      # PostgreSQL container settings.
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-auth_db}
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -16,8 +17,9 @@ services:
   chroma:
     image: chromadb/chroma:1.5.5
     environment:
-      IS_PERSISTENT: "TRUE"
-      ANONYMIZED_TELEMETRY: "FALSE"
+      # Chroma container settings.
+      IS_PERSISTENT: ${IS_PERSISTENT:-TRUE}
+      ANONYMIZED_TELEMETRY: ${ANONYMIZED_TELEMETRY:-FALSE}
     volumes:
       - chroma_test_data:/data
 
@@ -26,17 +28,20 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
-      SECRET_KEY: test_secret_key_for_e2e_tests_only
-      ALGORITHM: HS256
-      ENVIRONMENT: development
-      GROQ_API_KEY: ""
-      GEMINI_API_KEY: ""
-      DEEPSEEK_API_KEY: ""
-      CHROMA_HOST: chroma
-      CHROMA_PORT: 8000
-      CHROMA_SSL: "false"
-      CHROMA_COLLECTION_NAME: rag_documents
+      # Backend application settings shared with production.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
+      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://frontend:5173}
+      CHROMA_HOST: ${CHROMA_HOST:-chroma}
+      CHROMA_PORT: ${CHROMA_PORT:-8000}
+      CHROMA_SSL: ${CHROMA_SSL:-false}
+      CHROMA_COLLECTION_NAME: ${CHROMA_COLLECTION_NAME:-rag_documents}
+      # Backend provider credentials.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -52,17 +57,20 @@ services:
     volumes:
       - test_results:/results
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
-      SECRET_KEY: test_secret_key_for_e2e_tests_only
-      ALGORITHM: HS256
+      # Backend application settings for the pytest container.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
+      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
+      ALGORITHM: ${ALGORITHM:-HS256}
       ENVIRONMENT: test
-      GROQ_API_KEY: "test-key-placeholder"
-      GEMINI_API_KEY: "test-key-placeholder"
-      DEEPSEEK_API_KEY: "test-key-placeholder"
-      CHROMA_HOST: chroma
-      CHROMA_PORT: 8000
-      CHROMA_SSL: "false"
-      CHROMA_COLLECTION_NAME: rag_documents
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://frontend:5173}
+      CHROMA_HOST: ${CHROMA_HOST:-chroma}
+      CHROMA_PORT: ${CHROMA_PORT:-8000}
+      CHROMA_SSL: ${CHROMA_SSL:-false}
+      CHROMA_COLLECTION_NAME: ${CHROMA_COLLECTION_NAME:-rag_documents}
+      # Backend provider credentials shared with dev and e2e.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     command:
       [
         "sh",

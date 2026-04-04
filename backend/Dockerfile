@@ -22,6 +22,7 @@ CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload
 # Stage 3: Production environment
 FROM base AS production
 # Install only production dependencies
+ENV ENVIRONMENT=production
 RUN uv sync --locked --no-dev
 # Copy the rest of the application
 COPY . .
