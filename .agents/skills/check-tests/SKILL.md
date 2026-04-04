@@ -1,11 +1,11 @@
 ---
-name: run test
-description: Run the full Docker Compose validation flow for this repo: smoke-check the dev stack, run backend/frontend unit and integration tests, run the E2E suite, tear each stack down, and report the findings clearly.
+name: check-tests
+description: Use this skill when the user explicitly asks for the check-tests skill or wants a focused check of relevant project tests.
 ---
 
-# Run Test
+# Check Tests
 
-Use this skill when the user asks to run tests, validate the app end to end, or confirm that the Docker Compose stacks still work.
+Use this skill when the user asks to check tests for a specific change or feature.
 
 Always run from the repository root. Use `docker compose`, not `docker-compose`.
 
@@ -22,6 +22,7 @@ Always run from the repository root. Use `docker compose`, not `docker-compose`.
 - Prefer `down -v --remove-orphans` for `test` and `e2e` cleanup. For `dev`, use plain `down` unless the user explicitly asks to remove volumes.
 - Do not claim success based on partial logs. A stage passes only if its validation checks succeed and the relevant command exits with code `0`.
 - If a stage fails because Docker, dependencies, ports, or API keys are misconfigured, report that as an environment or infrastructure failure, not as an application regression.
+- Call out skipped coverage separately from failures. In this repo, parts of the E2E suite can skip when provider keys are unavailable.
 
 ## Step 1: Dev Stack Smoke Check
 
@@ -33,16 +34,11 @@ docker compose -f infra/docker-compose.dev.yml up --build -d
 
 Validate:
 
-- Run `docker compose -f infra/docker-compose.dev.yml ps` and make sure the services are up.
+- Run `docker compose -f infra/docker-compose.dev.yml ps` and inspect service state carefully:
+  - `db`, `chroma`, `backend`, and `frontend` should be running
+  - `add-admin-user-to-db` is a one-shot bootstrap helper and may exit `0`; treat that as expected, not as a failure
 - Wait for the backend health endpoint to respond at `http://localhost:8000/health`.
 - Confirm the frontend responds at `http://localhost:5173`.
-
-Example portable wait loops:
-
-```bash
-for i in $(seq 1 60); do curl -fsS http://localhost:8000/health >/dev/null && break; sleep 2; done
-for i in $(seq 1 60); do curl -fsS http://localhost:5173 >/dev/null && break; sleep 2; done
-```
 
 If validation fails, capture:
 
@@ -68,8 +64,10 @@ docker compose -f infra/docker-compose.test.yml up --build --abort-on-container-
 Important repo detail:
 
 - `backend-test` runs `uv run pytest tests/`
-- `frontend-test` waits for `backend-test` to finish, then runs `npm run test -- --run`
+- `backend-test` writes its exit code to `/results/backend-test.exit`, touches `/results/backend-test.done`, then stays alive so the next container can read the result
+- `frontend-test` waits for `backend-test` to become healthy, then runs `npm run test -- --run`
 - The overall exit code should be taken from `frontend-test`
+- If `backend-test` never becomes healthy, that means setup failed before frontend tests started
 
 After the run, inspect logs before cleanup if you need more detail:
 
@@ -82,6 +80,7 @@ Your analysis should explicitly state:
 
 - Whether backend tests passed
 - Whether frontend tests passed
+- Whether frontend tests were blocked because backend-test never became healthy
 - Any failing test names, assertion messages, or stack traces that matter
 - Whether the failure happened before tests actually started
 
@@ -109,8 +108,10 @@ docker compose -f infra/docker-compose.e2e.yml ps
 Notes:
 
 - The `e2e` service runs `npx playwright test`
-- Some provider-backed flows may require `GROQ_API_KEY`, `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY`
-- If E2E fails because required provider configuration is missing, say so clearly
+- `login.spec.ts` and `signup.spec.ts` do not require provider keys
+- `rag.spec.ts` skips when none of `GROQ_API_KEY`, `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY` is set
+- If `E2E_PROVIDER` is set without its matching API key, treat that as configuration failure
+- If the suite passes with one or more skipped tests, report that clearly instead of calling it a clean full pass
 
 Always tear the stack down:
 
@@ -129,12 +130,14 @@ Report the results in this order:
 
 For each stage, include:
 
-- `Passed`, `Failed`, or `Blocked`
+- `Passed`, `Passed with skips`, `Failed`, or `Blocked`
 - The command you ran
 - The key evidence: health checks, exit code, service status, or important failing test output
 - A short explanation of what the result means
 
-If everything passed, say that all three stages completed successfully and that all Docker Compose stacks were torn down cleanly.
+If everything passed without skips, say that all three stages completed successfully and that all Docker Compose stacks were torn down cleanly.
+
+If E2E passed with skips, say exactly which test file or scenario skipped and why.
 
 If anything failed, keep the report actionable:
 

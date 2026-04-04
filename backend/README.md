@@ -43,6 +43,7 @@ We use [uv](https://github.com/astral-sh/uv), the blazing-fast Python package ma
    ALGORITHM="HS256"
    ACCESS_TOKEN_EXPIRE_MINUTES=30
    ENVIRONMENT="development"  # Set to "production" to enable logging
+   MOCK_PROVIDER_RESPONSES=false
    CHROMA_HOST="localhost"
    CHROMA_PORT=8001
    CHROMA_SSL=false
@@ -54,7 +55,8 @@ We use [uv](https://github.com/astral-sh/uv), the blazing-fast Python package ma
 The backend now connects to Chroma over HTTP instead of using embedded local
 storage. For local host-based development, point `CHROMA_HOST` and
 `CHROMA_PORT` at your running Chroma server. For Docker Compose development,
-the compose files set these automatically to the internal `chroma` service.
+the compose files use the same `CHROMA_*` variables and set them to the
+internal `chroma` service by default.
 
 To point the same backend code at a hosted Chroma deployment later, only
 change the connection variables. For example:

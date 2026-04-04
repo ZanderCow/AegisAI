@@ -27,6 +27,7 @@ def test_config_loads_defaults(monkeypatch: MonkeyPatch) -> None:
     # Optional values should use defaults
     monkeypatch.delenv("ALGORITHM", raising=False)
     monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
     monkeypatch.delenv("CHROMA_HOST", raising=False)
     monkeypatch.delenv("CHROMA_PORT", raising=False)
     monkeypatch.delenv("CHROMA_SSL", raising=False)
@@ -40,6 +41,11 @@ def test_config_loads_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.ALGORITHM == "HS256"
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30
     assert settings.ENVIRONMENT == "development"
+    assert settings.CORS_ALLOWED_ORIGINS == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://frontend:5173",
+    ]
     assert settings.AUTO_CREATE_TABLES is True
     assert settings.MOCK_PROVIDER_RESPONSES is False
     assert settings.CHROMA_HOST == "localhost"
@@ -62,6 +68,10 @@ def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("ALGORITHM", "HS512")
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGINS",
+        "https://app.example.com, https://admin.example.com",
+    )
     monkeypatch.delenv("AUTO_CREATE_TABLES", raising=False)
     monkeypatch.setenv("MOCK_PROVIDER_RESPONSES", "true")
     monkeypatch.setenv("CHROMA_HOST", "chroma.internal")
@@ -75,6 +85,10 @@ def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
     assert settings.ALGORITHM == "HS512"
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 60
     assert settings.ENVIRONMENT == "production"
+    assert settings.CORS_ALLOWED_ORIGINS == [
+        "https://app.example.com",
+        "https://admin.example.com",
+    ]
     assert settings.AUTO_CREATE_TABLES is False
     assert settings.MOCK_PROVIDER_RESPONSES is True
     assert settings.CHROMA_HOST == "chroma.internal"
@@ -103,6 +117,24 @@ def test_config_allows_overriding_auto_create_tables(monkeypatch: MonkeyPatch) -
 
     assert settings.ENVIRONMENT == "production"
     assert settings.AUTO_CREATE_TABLES is True
+
+
+def test_config_accepts_json_array_for_cors_allowed_origins(monkeypatch: MonkeyPatch) -> None:
+    """Tests JSON array syntax for CORS_ALLOWED_ORIGINS env values."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
+    monkeypatch.setenv("SECRET_KEY", "custom_key")
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGINS",
+        '["https://app.example.com", "https://admin.example.com"]',
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.CORS_ALLOWED_ORIGINS == [
+        "https://app.example.com",
+        "https://admin.example.com",
+    ]
+
 
 def test_config_validation_error_missing_db(monkeypatch: MonkeyPatch) -> None:
     """Tests Pydantic validation when DATABASE_URL is missing.
