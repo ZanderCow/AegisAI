@@ -10,6 +10,7 @@ function makeFakeJWT(payload: Record<string, unknown>): string {
 const VALID_TOKEN = makeFakeJWT({
     sub: 'e2e-user-id',
     email: 'e2e@example.com',
+    role: 'admin',
     exp: Math.floor(Date.now() / 1000) + 3600,
 });
 
