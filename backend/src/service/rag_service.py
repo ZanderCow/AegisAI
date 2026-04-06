@@ -116,9 +116,25 @@ class RAGService:
     # ------------------------------------------------------------------
 
     async def add_document(
-        self, user_id: str, filename: str, pdf_bytes: bytes
+        self,
+        user_id: str,
+        filename: str,
+        pdf_bytes: bytes,
+        allowed_roles: list[str] | None = None,
+        doc_id: str | None = None,
     ) -> dict:
-        """Parse a PDF, chunk it, embed it, and store it in ChromaDB."""
+        """Parse a PDF, chunk it, embed it, and store it in ChromaDB.
+
+        Each chunk carries boolean role flags (role_admin, role_it, etc.) so
+        that queries can efficiently filter by the requesting user's role.
+
+        Args:
+            user_id: ID of the uploader (stored for audit purposes).
+            filename: Original filename of the PDF.
+            pdf_bytes: Raw PDF content.
+            allowed_roles: Roles that may access this document.
+            doc_id: Pre-assigned UUID; generated if not provided.
+        """
         reader = PdfReader(BytesIO(pdf_bytes))
         full_text = "\n".join(
             page.extract_text() or "" for page in reader.pages
@@ -127,12 +143,26 @@ class RAGService:
         if not chunks:
             raise ValueError("No extractable text found in the uploaded PDF.")
 
-        doc_id = str(uuid.uuid4())
-        logger.info(f"Storing {len(chunks)} chunks for doc {doc_id} (user {user_id})")
+        if doc_id is None:
+            doc_id = str(uuid.uuid4())
+        roles = allowed_roles or []
+
+        logger.info(f"Storing {len(chunks)} chunks for doc {doc_id} (user {user_id}, roles={roles})")
 
         ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
         metadatas = [
-            {"user_id": user_id, "doc_id": doc_id, "filename": filename, "chunk_index": i}
+            {
+                "user_id": user_id,
+                "doc_id": doc_id,
+                "filename": filename,
+                "chunk_index": i,
+                # Boolean role flags for efficient ChromaDB where-filtering
+                "role_admin": "admin" in roles,
+                "role_security": "security" in roles,
+                "role_it": "it" in roles,
+                "role_hr": "hr" in roles,
+                "role_finance": "finance" in roles,
+            }
             for i in range(len(chunks))
         ]
 
@@ -140,9 +170,9 @@ class RAGService:
         logger.info(f"Stored doc {doc_id} with {len(chunks)} chunks")
         return {"doc_id": doc_id, "filename": filename, "chunk_count": len(chunks)}
 
-    async def list_documents(self, user_id: str) -> list[dict]:
-        """Return a deduplicated list of documents for a user."""
-        result = await asyncio.to_thread(self._sync_get, {"user_id": user_id})
+    async def list_documents_by_role(self, role: str) -> list[dict]:
+        """Return a deduplicated list of documents accessible to the given role."""
+        result = await asyncio.to_thread(self._sync_get, {f"role_{role}": True})
         docs: dict[str, dict] = {}
         for meta in result.get("metadatas", []):
             doc_id = meta["doc_id"]
@@ -151,23 +181,50 @@ class RAGService:
             docs[doc_id]["chunk_count"] += 1
         return list(docs.values())
 
-    async def delete_document(self, user_id: str, doc_id: str) -> None:
-        """Delete all chunks belonging to a document owned by the user."""
+    async def delete_document(self, doc_id: str) -> None:
+        """Delete all chunks belonging to a document."""
         ids = await asyncio.to_thread(
-            self._sync_get_ids, {"user_id": user_id, "doc_id": doc_id}
+            self._sync_get_ids, {"doc_id": doc_id}
         )
         if ids:
             await asyncio.to_thread(self._sync_delete, ids)
-            logger.info(f"Deleted doc {doc_id} ({len(ids)} chunks) for user {user_id}")
+            logger.info(f"Deleted doc {doc_id} ({len(ids)} chunks)")
 
-    async def get_context(self, user_id: str, query: str, n_results: int = 5) -> Optional[str]:
+    def _sync_update_roles(self, doc_id: str, roles: list[str]) -> None:
+        """Update the role flags on all chunks of a document."""
+        result = self._collection.get(where={"doc_id": doc_id}, include=["metadatas"])
+        ids = result.get("ids", [])
+        if not ids:
+            return
+        new_meta = [
+            {
+                **m,
+                "role_admin": "admin" in roles,
+                "role_security": "security" in roles,
+                "role_it": "it" in roles,
+                "role_hr": "hr" in roles,
+                "role_finance": "finance" in roles,
+            }
+            for m in result["metadatas"]
+        ]
+        self._collection.update(ids=ids, metadatas=new_meta)
+
+    async def update_document_roles(self, doc_id: str, roles: list[str]) -> None:
+        """Update role flags for all chunks of a document in ChromaDB."""
+        await asyncio.to_thread(self._sync_update_roles, doc_id, roles)
+        logger.info(f"Updated role flags for doc {doc_id} → {roles}")
+
+    async def get_context(self, role: str, query: str, n_results: int = 5) -> Optional[str]:
         """Retrieve the most semantically relevant chunks for a query.
 
-        Returns None if the user has no documents.
+        Filters chunks by the requesting user's role so that only documents
+        whose allowed_roles includes that role are considered.
+
+        Returns None if no role-accessible documents exist.
         """
         try:
             result = await asyncio.to_thread(
-                self._sync_query, [query], n_results, {"user_id": user_id}
+                self._sync_query, [query], n_results, {f"role_{role}": True}
             )
             docs = result.get("documents", [[]])[0]
             metas = result.get("metadatas", [[]])[0]
@@ -176,7 +233,7 @@ class RAGService:
             parts = [f"[Source: {m['filename']}]\n{d}" for d, m in zip(docs, metas)]
             return "\n\n---\n\n".join(parts)
         except Exception as exc:
-            logger.warning(f"RAG context retrieval failed: {exc}")
+            logger.error(f"RAG context retrieval failed for role={role}: {exc}", exc_info=True)
             return None
 
 

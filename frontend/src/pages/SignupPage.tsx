@@ -3,12 +3,21 @@ import { Navigate, useNavigate, Link } from 'react-router';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, Input, Button } from '@/components/ui';
 
+const ROLES = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'security', label: 'Security' },
+  { value: 'it', label: 'IT' },
+  { value: 'hr', label: 'HR' },
+  { value: 'finance', label: 'Finance' },
+];
+
 export function SignupPage() {
   const { isAuthenticated, signup } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('it');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -27,7 +36,7 @@ export function SignupPage() {
 
     setIsLoading(true);
     try {
-      await signup(email, password);
+      await signup(email, password, role);
       navigate('/chat', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account');
@@ -73,6 +82,18 @@ export function SignupPage() {
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Repeat your password"
             />
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-300">Role</label>
+              <select
+                value={role}
+                onChange={e => setRole(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-aegis-500"
+              >
+                {ROLES.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
             <Button type="submit" isLoading={isLoading} className="w-full">
               Sign Up
             </Button>

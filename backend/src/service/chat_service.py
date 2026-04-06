@@ -102,7 +102,7 @@ class ChatService:
         messages = await self.repo.get_messages(convo.id)
         return [{"role": m.role, "content": m.content} for m in messages]
 
-    async def stream_response(self, convo: Conversation, content: str):
+    async def stream_response(self, convo: Conversation, content: str, role: str = "it"):
         """Persists the user message, streams the provider response, then saves it.
 
         This is an async generator. The conversation ownership must be verified
@@ -111,6 +111,7 @@ class ChatService:
         Args:
             convo (Conversation): The verified conversation model.
             content (str): The user's message content.
+            role (str): The authenticated user's role for RAG document filtering.
 
         Yields:
             str: Text chunks from the provider's streaming response.
@@ -121,8 +122,8 @@ class ChatService:
         all_messages = await self.repo.get_messages(convo.id)
         messages_payload = [{"role": m.role, "content": m.content} for m in all_messages]
 
-        # Inject RAG context as a leading system message if relevant documents exist
-        rag_context = await self.rag.get_context(str(convo.user_id), content)
+        # Inject RAG context — only documents accessible to the user's role are considered
+        rag_context = await self.rag.get_context(role, content)
         if rag_context:
             system_msg = {
                 "role": "system",

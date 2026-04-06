@@ -3,6 +3,7 @@
 This module provides functions for generating secure
 JSON Web Tokens (JWT) for authentication.
 """
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import jwt
@@ -95,3 +96,36 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     return user_id
+
+
+@dataclass
+class AuthenticatedUser:
+    """Carries both the user ID and role extracted from a validated JWT."""
+    user_id: str
+    role: str
+
+
+async def get_current_user_with_role(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> AuthenticatedUser:
+    """Extracts user ID and role from a Bearer token.
+
+    Returns:
+        AuthenticatedUser: Validated user_id and role from the JWT payload.
+
+    Raises:
+        HTTPException: 401 if the token is invalid or the user no longer exists.
+    """
+    from src.repo.user_repo import UserRepository
+
+    payload = decode_token(credentials.credentials)
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    user = await UserRepository(db).get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return AuthenticatedUser(user_id=user_id, role=user.role)

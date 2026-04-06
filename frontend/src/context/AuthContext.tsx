@@ -4,7 +4,7 @@ import { authService } from '@/services';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, role?: string) => Promise<void>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
 }
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.removeItem('aegis_token');
           setState({ user: null, isAuthenticated: false, isLoading: false });
         } else {
-          const user: User = { id: payload.sub, email: payload.email };
+          const user: User = { id: payload.sub, email: payload.email, role: payload.role };
           setState({ user, isAuthenticated: true, isLoading: false });
         }
       } catch {
@@ -46,8 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ user, isAuthenticated: true, isLoading: false });
   }, []);
 
-  const signup = useCallback(async (email: string, password: string) => {
-    const { token, user } = await authService.signup(email, password);
+  const signup = useCallback(async (email: string, password: string, role?: string) => {
+    const { token, user } = await authService.signup(email, password, role);
     localStorage.setItem('aegis_token', token);
     setState({ user, isAuthenticated: true, isLoading: false });
   }, []);
@@ -57,9 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }, []);
 
-  // When role is not yet provided by the backend, allow all authenticated users through.
   const hasRole = useCallback(
-    (roles: UserRole[]) => !!state.user && (!state.user.role || roles.includes(state.user.role)),
+    (roles: UserRole[]) => !!state.user && !!state.user.role && roles.includes(state.user.role),
     [state.user],
   );
 

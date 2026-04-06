@@ -4,7 +4,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function decodeJwtUser(token: string): User {
   const payload = JSON.parse(atob(token.split('.')[1]));
-  return { id: payload.sub, email: payload.email };
+  return { id: payload.sub, email: payload.email, role: payload.role };
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -28,11 +28,11 @@ export const authService = {
     return { token: access_token, user: decodeJwtUser(access_token) };
   },
 
-  async signup(email: string, password: string): Promise<{ token: string; user: User }> {
+  async signup(email: string, password: string, role: string = 'it'): Promise<{ token: string; user: User }> {
     const res = await fetch(`${API_URL}/api/v1/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, role }),
     });
     if (!res.ok) throw new Error(await parseError(res));
     const { access_token } = await res.json();

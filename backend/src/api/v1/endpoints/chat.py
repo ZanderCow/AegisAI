@@ -19,7 +19,7 @@ from src.schemas.chat_schema import (
 )
 from src.repo.conversation_repo import ConversationRepository
 from src.service.chat_service import ChatService
-from src.security.jwt import get_current_user
+from src.security.jwt import get_current_user_with_role, AuthenticatedUser
 from src.providers import validate_provider
 from src.core.logger import get_logger
 
@@ -44,15 +44,15 @@ def get_chat_service(session: AsyncSession = Depends(get_db)) -> ChatService:
 async def create_conversation(
     request: CreateConversationRequest,
     service: ChatService = Depends(get_chat_service),
-    user_id: str = Depends(get_current_user),
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
     """Create a new conversation session with a locked provider and model.
 
     The provider and model are fixed for the lifetime of the conversation.
     All subsequent messages in this conversation will use the same provider.
     """
-    logger.info(f"Received create conversation request from user {user_id}")
-    conversation_id = await service.create_conversation(user_id, request)
+    logger.info(f"Received create conversation request from user {auth.user_id}")
+    conversation_id = await service.create_conversation(auth.user_id, request)
     return ConversationResponse(conversation_id=conversation_id)
 
 
@@ -77,7 +77,7 @@ async def send_message(
     conversation_id: str,
     request: SendMessageRequest,
     service: ChatService = Depends(get_chat_service),
-    user_id: str = Depends(get_current_user),
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
     """Send a message and receive a streaming AI response via Server-Sent Events.
 
@@ -88,11 +88,11 @@ async def send_message(
     The final event is: data: {"content": "", "done": true}
     """
     logger.info(f"Received send message request for conversation {conversation_id}")
-    convo = await service.get_conversation_or_404(conversation_id, user_id)
+    convo = await service.get_conversation_or_404(conversation_id, auth.user_id)
     validate_provider(convo.provider)
 
     async def event_stream():
-        async for chunk in service.stream_response(convo, request.content):
+        async for chunk in service.stream_response(convo, request.content, auth.role):
             yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
         yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
 
@@ -103,7 +103,7 @@ async def send_message(
 async def get_messages(
     conversation_id: str,
     service: ChatService = Depends(get_chat_service),
-    user_id: str = Depends(get_current_user),
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
     """Fetch the message history for a conversation.
 
@@ -111,4 +111,4 @@ async def get_messages(
     belong to the authenticated user — conversation existence is not leaked.
     """
     logger.info(f"Received get messages request for conversation {conversation_id}")
-    return await service.get_messages(conversation_id, user_id)
+    return await service.get_messages(conversation_id, auth.user_id)
