@@ -5,7 +5,7 @@ Users may only access documents whose allowed_roles list includes their role.
 """
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, BigInteger, Uuid, ARRAY, Text, ForeignKey, DateTime
+from sqlalchemy import Column, String, BigInteger, Uuid, ARRAY, JSON, Text, ForeignKey, DateTime
 from src.models.user_model import Base
 
 
@@ -38,7 +38,7 @@ class Document(Base):
     file_size = Column(BigInteger, nullable=False, default=0)
     status = Column(String(50), nullable=False, default="active")
     uploaded_by = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    allowed_roles = Column(ARRAY(String), nullable=False, default=list)
+    allowed_roles = Column(JSON, nullable=False, default=list)
     chroma_doc_id = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
