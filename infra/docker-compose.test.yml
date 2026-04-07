@@ -37,6 +37,7 @@ services:
       CHROMA_PORT: 8000
       CHROMA_SSL: "false"
       CHROMA_COLLECTION_NAME: rag_documents
+      MFA_ENABLED: "false"
     ports:
       - "8000:8000"
     depends_on:

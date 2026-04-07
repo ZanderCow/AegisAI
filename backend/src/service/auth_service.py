@@ -5,10 +5,12 @@ and login, coordinating between validation schemas, security utilities,
 and the database repository.
 """
 from fastapi import HTTPException, status
-from src.schemas.auth_schema import SignupRequest, LoginRequest, TokenResponse
+from src.schemas.auth_schema import SignupRequest, LoginRequest, TokenResponse, DuoLoginResponse, DuoCallbackRequest
 from src.repo.user_repo import UserRepository
 from src.security.password import hash_password, verify_password
-from src.security.jwt import create_token
+from src.security.jwt import create_token, decode_token
+from src.security.duo import get_duo_client, DuoException
+from src.core.config import settings
 from src.core.logger import get_logger
 
 logger = get_logger("AUTH_SERVICE")
@@ -56,20 +58,22 @@ class AuthService:
         token = create_token({"sub": str(new_user.id), "email": new_user.email})
         return TokenResponse(access_token=token, token_type="bearer")
 
-    async def login(self, request: LoginRequest) -> TokenResponse:
-        """Authenticates a user and issues a JWT token.
-        
-        Retrieves the user by email and compares the provided plaintext password
-        with the stored hash. If successful, generates an access token.
-        
+    async def login(self, request: LoginRequest) -> TokenResponse | DuoLoginResponse:
+        """Authenticates a user and either issues a JWT or initiates Duo MFA.
+
+        When MFA_ENABLED is False (or Duo is unconfigured) a JWT is returned
+        immediately.  When MFA_ENABLED is True, a DuoLoginResponse containing
+        the Duo auth URL and a short-lived state token is returned instead.
+
         Args:
             request (LoginRequest): The validated schema containing login credentials.
-            
+
         Returns:
-            TokenResponse: A schema containing a valid JWT access token.
-            
+            TokenResponse | DuoLoginResponse: A JWT on success, or Duo redirect info.
+
         Raises:
-            HTTPException: With a 401 Unauthorized if the credentials do not match.
+            HTTPException: 401 if credentials do not match.
+            HTTPException: 503 if Duo MFA is enabled but misconfigured.
         """
         logger.info(f"Attempting login for email: {request.email}")
         user = await self.repo.get_by_email(request.email)
@@ -77,9 +81,75 @@ class AuthService:
             logger.warning(f"Login failed: Invalid credentials for email: {request.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials"
+                detail="Invalid credentials",
             )
-            
-        logger.info(f"Login successful for user: {user.id}")
-        token = create_token({"sub": str(user.id), "email": user.email})
+
+        if not settings.MFA_ENABLED:
+            logger.info(f"MFA disabled — issuing token directly for user: {user.id}")
+            token = create_token({"sub": str(user.id), "email": user.email})
+            return TokenResponse(access_token=token, token_type="bearer")
+
+        # MFA path — initiate Duo Universal Prompt flow.
+        logger.info(f"MFA enabled — initiating Duo flow for user: {user.id}")
+        try:
+            duo = get_duo_client()
+            duo.health_check()
+            state = duo.generate_state()
+            auth_url = duo.create_auth_url(user.email, state)
+        except DuoException as exc:
+            logger.error(f"Duo MFA initiation failed: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="MFA service unavailable — please try again later.",
+            )
+
+        # Encode user identity + Duo state in a short-lived token so the
+        # callback endpoint can verify without server-side session storage.
+        state_token = create_token(
+            {"sub": str(user.id), "email": user.email, "duo_state": state, "type": "mfa_pending"},
+            expires_minutes=5,
+        )
+        return DuoLoginResponse(duo_auth_url=auth_url, state_token=state_token)
+
+    async def duo_callback(self, request: DuoCallbackRequest) -> TokenResponse:
+        """Completes Duo MFA and issues a full session JWT.
+
+        Decodes the state_token to recover the pending user identity, verifies
+        the Duo state matches, then exchanges the Duo code for a result.
+
+        Args:
+            request (DuoCallbackRequest): Code, state, and state_token from the callback.
+
+        Returns:
+            TokenResponse: A full session JWT on successful MFA verification.
+
+        Raises:
+            HTTPException: 401 if the state_token is invalid or the states don't match.
+            HTTPException: 401 if Duo rejects the authorization code.
+        """
+        try:
+            payload = decode_token(request.state_token)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid state token")
+
+        if payload.get("type") != "mfa_pending":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid state token")
+
+        expected_state = payload.get("duo_state")
+        if not expected_state or expected_state != request.state:
+            logger.warning("Duo state mismatch — possible CSRF attempt")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="State mismatch")
+
+        username = payload.get("email")
+        user_id = payload.get("sub")
+
+        try:
+            duo = get_duo_client()
+            duo.exchange_authorization_code_for_2fa_result(request.duo_code, username)
+        except DuoException as exc:
+            logger.warning(f"Duo MFA verification failed for {username}: {exc}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA verification failed")
+
+        logger.info(f"Duo MFA passed — issuing token for user: {user_id}")
+        token = create_token({"sub": user_id, "email": username})
         return TokenResponse(access_token=token, token_type="bearer")

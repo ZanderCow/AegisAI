@@ -16,8 +16,12 @@ export function LoginPage() {
   const handleLogin = async (email: string, password: string) => {
     setError('');
     try {
-      await login(email, password);
-      navigate('/chat', { replace: true });
+      const outcome = await login(email, password);
+      if (outcome.mfaRequired) {
+        window.location.href = outcome.duoAuthUrl;
+      } else {
+        navigate('/chat', { replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     }

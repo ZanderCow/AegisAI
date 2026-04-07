@@ -5,7 +5,7 @@ including database connections, security tokens, and the remote Chroma
 server used by the RAG pipeline. These settings are loaded from
 environment variables or a local .env file using Pydantic.
 """
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +62,36 @@ class Settings(BaseSettings):
         default="rag_documents",
         description="Collection name used for RAG document storage.",
     )
+    MFA_ENABLED: bool = Field(
+        default=False,
+        description="When True, Duo MFA is required at login.",
+    )
+    DUO_CLIENT_ID: str = Field(default="", description="Duo application client ID.")
+    DUO_CLIENT_SECRET: str = Field(default="", description="Duo application client secret.")
+    DUO_API_HOST: str = Field(default="", description="Duo API hostname (e.g. api-XXXXXXXX.duosecurity.com).")
+    DUO_REDIRECT_URI: str = Field(
+        default="http://localhost:5173/auth/duo/callback",
+        description="URI Duo redirects to after authentication.",
+    )
+
+    @model_validator(mode="after")
+    def validate_duo_settings(self) -> "Settings":
+        """Ensure all required Duo settings are provided when MFA is enabled."""
+        if self.MFA_ENABLED:
+            missing = [
+                name for name, value in {
+                    "DUO_CLIENT_ID": self.DUO_CLIENT_ID,
+                    "DUO_CLIENT_SECRET": self.DUO_CLIENT_SECRET,
+                    "DUO_API_HOST": self.DUO_API_HOST,
+                    "DUO_REDIRECT_URI": self.DUO_REDIRECT_URI,
+                }.items()
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    f"MFA_ENABLED=true requires the following environment variables to be set: {', '.join(missing)}"
+                )
+        return self
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

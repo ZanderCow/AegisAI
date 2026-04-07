@@ -39,6 +39,18 @@ def test_create_token_success() -> None:
     exp_datetime = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
     assert exp_datetime > datetime.now(timezone.utc)
 
+def test_create_token_custom_expiry() -> None:
+    """Tests that expires_minutes overrides the default expiration window."""
+    token = create_token({"sub": "user_custom_exp"}, expires_minutes=5)
+    decoded = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+
+    exp = datetime.fromtimestamp(decoded["exp"], tz=timezone.utc)
+    now = datetime.now(timezone.utc)
+    # Should expire in roughly 5 minutes, not the default 30
+    delta_minutes = (exp - now).total_seconds() / 60
+    assert 4 <= delta_minutes <= 6
+
+
 def test_create_token_does_not_mutate_input() -> None:
     """Tests that the input dictionary is not mutated.
     

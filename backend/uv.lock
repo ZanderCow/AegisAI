@@ -15,6 +15,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "bcrypt" },
     { name = "chromadb" },
+    { name = "duo-universal" },
     { name = "fastapi" },
     { name = "greenlet" },
     { name = "passlib", extra = ["bcrypt"] },
@@ -41,6 +42,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "chromadb", specifier = ">=0.5.0" },
+    { name = "duo-universal", specifier = ">=1.3.0" },
     { name = "fastapi", specifier = ">=0.133.1" },
     { name = "greenlet", specifier = ">=3.3.2" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
@@ -411,6 +413,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8c/8b/57666417c0f90f08bcafa776861060426765fdb422eb10212086fb811d26/dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f", size = 368251, upload-time = "2025-09-07T18:58:00.022Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af", size = 331094, upload-time = "2025-09-07T18:57:58.071Z" },
+]
+
+[[package]]
+name = "duo-universal"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyjwt" },
+    { name = "requests" },
+    { name = "wheel" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/5a/0b2280fd79f00170b8494331451c347e40ebe696cb8621cb9c6827203bd5/duo_universal-2.2.0.tar.gz", hash = "sha256:86eb40ccd159493eaef4e3d3043b5109befcd0b03e0887c281ad73687c2748af", size = 30262, upload-time = "2025-03-20T20:55:43.07Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/7c/d4579712d150255e0cf268df498bcbca106a0238cd872bc45005f64afe99/duo_universal-2.2.0-py2.py3-none-any.whl", hash = "sha256:807b05a085de15270d3f29c3fb30fc64a19ecf9f78fb2f8a682ab481d5d2a6da", size = 20884, upload-time = "2025-03-20T20:55:42.167Z" },
 ]
 
 [[package]]
@@ -2280,6 +2296,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a5/8f/aea9c71cc92bf9b6cc0f7f70df8f0b420636b6c96ef4feee1e16f80f75dd/websockets-16.0-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0298d07ee155e2e9fda5be8a9042200dd2e3bb0b8a38482156576f863a9d457c", size = 176968, upload-time = "2026-01-10T09:23:41.031Z" },
     { url = "https://files.pythonhosted.org/packages/9a/3f/f70e03f40ffc9a30d817eef7da1be72ee4956ba8d7255c399a01b135902a/websockets-16.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:a653aea902e0324b52f1613332ddf50b00c06fdaf7e92624fbf8c77c78fa5767", size = 178735, upload-time = "2026-01-10T09:23:42.259Z" },
     { url = "https://files.pythonhosted.org/packages/6f/28/258ebab549c2bf3e64d2b0217b973467394a9cea8c42f70418ca2c5d0d2e/websockets-16.0-py3-none-any.whl", hash = "sha256:1637db62fad1dc833276dded54215f2c7fa46912301a24bd94d45d46a011ceec", size = 171598, upload-time = "2026-01-10T09:23:45.395Z" },
+]
+
+[[package]]
+name = "wheel"
+version = "0.46.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/24/a2eb353a6edac9a0303977c4cb048134959dd2a51b48a269dfc9dde00c8a/wheel-0.46.3.tar.gz", hash = "sha256:e3e79874b07d776c40bd6033f8ddf76a7dad46a7b8aa1b2787a83083519a1803", size = 60605, upload-time = "2026-01-22T12:39:49.136Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/22/b76d483683216dde3d67cba61fb2444be8d5be289bf628c13fc0fd90e5f9/wheel-0.46.3-py3-none-any.whl", hash = "sha256:4b399d56c9d9338230118d705d9737a2a468ccca63d5e813e2a4fc7815d8bc4d", size = 30557, upload-time = "2026-01-22T12:39:48.099Z" },
 ]
 
 [[package]]
