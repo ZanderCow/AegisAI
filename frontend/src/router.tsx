@@ -15,12 +15,14 @@ import { DocumentManagementPage } from '@/pages/admin/DocumentManagementPage';
 import { SecurityPage } from '@/pages/admin/SecurityPage';
 import { SecurityDashboardPage } from '@/pages/security/SecurityDashboardPage';
 import { SecurityDocumentsPage } from '@/pages/security/SecurityDocumentsPage';
+import { DuoCallbackPage } from '@/pages/DuoCallbackPage';
 
 export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/auth/duo/callback" element={<DuoCallbackPage />} />
       <Route path="/forbidden" element={<ForbiddenPage />} />
 
       <Route element={<ProtectedRoute />}>

@@ -30,6 +30,8 @@ services:
       target: development
     volumes:
       - ../backend:/app
+    env_file:
+      - .env
     environment:
       # Backend application settings shared with production.
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
@@ -45,6 +47,11 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MFA_ENABLED: ${MFA_ENABLED:-false}
+      DUO_CLIENT_ID: ${DUO_CLIENT_ID:-}
+      DUO_CLIENT_SECRET: ${DUO_CLIENT_SECRET:-}
+      DUO_API_HOST: ${DUO_API_HOST:-}
+      DUO_REDIRECT_URI: ${DUO_REDIRECT_URI:-http://localhost:5173/auth/duo/callback}
     ports:
       - "8000:8000"
     depends_on:

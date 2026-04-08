@@ -2,8 +2,13 @@ import { createContext, useCallback, useEffect, useState, type ReactNode } from 
 import type { AuthState, User, UserRole } from '@/types';
 import { authService } from '@/services';
 
+export type LoginOutcome =
+  | { mfaRequired: false }
+  | { mfaRequired: true; duoAuthUrl: string };
+
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
+  completeLogin: (token: string) => void;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
@@ -45,10 +50,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { token, user } = await authService.login(email, password);
+  const completeLogin = useCallback((token: string) => {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const user = { id: payload.sub, email: payload.email, name: payload.name ?? payload.email, role: payload.role };
     localStorage.setItem('aegis_token', token);
     setState({ user, isAuthenticated: true, isLoading: false });
+  }, []);
+
+  const login = useCallback(async (email: string, password: string): Promise<LoginOutcome> => {
+    const result = await authService.login(email, password);
+    if (result.mfaRequired) {
+      sessionStorage.setItem('duo_state_token', result.stateToken);
+      return { mfaRequired: true, duoAuthUrl: result.duoAuthUrl };
+    }
+    localStorage.setItem('aegis_token', result.token);
+    setState({ user: result.user, isAuthenticated: true, isLoading: false });
+    return { mfaRequired: false };
   }, []);
 
   const signup = useCallback(async (email: string, password: string) => {
@@ -69,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ ...state, login, signup, logout, hasRole }}>
+    <AuthContext.Provider value={{ ...state, login, completeLogin, signup, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   );
