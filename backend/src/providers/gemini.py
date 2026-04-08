@@ -9,8 +9,11 @@ import json
 import httpx
 
 from src.core.logger import get_logger
+from src.moderation.exceptions import ContentPolicyError
 
 logger = get_logger("PROVIDER_GEMINI")
+
+_CONTENT_POLICY_MARKERS = ("safety", "prohibited", "blockreason", "harm_category")
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
 
@@ -44,6 +47,9 @@ async def stream(messages: list[dict], model: str, api_key: str):
 
     Yields:
         str: Text content chunks from the streaming response.
+
+    Raises:
+        ContentPolicyError: If Gemini's safety filters block the request.
     """
     url = _BASE_URL.format(model=model)
     async with httpx.AsyncClient(timeout=60) as client:
@@ -54,6 +60,10 @@ async def stream(messages: list[dict], model: str, api_key: str):
             headers={"Content-Type": "application/json"},
             json={"contents": _to_gemini_contents(messages)},
         ) as response:
+            if response.status_code == 400:
+                body = (await response.aread()).decode("utf-8", errors="ignore").lower()
+                if any(marker in body for marker in _CONTENT_POLICY_MARKERS):
+                    raise ContentPolicyError("Gemini content policy violation")
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:

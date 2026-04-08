@@ -19,9 +19,10 @@ from src.schemas.chat_schema import (
     MessageResponse,
 )
 from src.repo.conversation_repo import ConversationRepository
+from src.repo.flagged_event_repo import FlaggedEventRepository
 from src.service.chat_service import ChatService
 from src.service.rag_service import RAGService
-from src.security.jwt import get_current_user, get_current_user_with_role
+from src.security.jwt import get_current_user
 from src.providers import validate_provider
 from src.core.logger import get_logger
 
@@ -43,7 +44,7 @@ def get_chat_service(
     Returns:
         ChatService: An initialized instance of the ChatService.
     """
-    return ChatService(ConversationRepository(session), rag)
+    return ChatService(ConversationRepository(session), rag, FlaggedEventRepository(session))
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -92,7 +93,7 @@ async def send_message(
     conversation_id: str,
     request: SendMessageRequest,
     service: ChatService = Depends(get_chat_service),
-    current_user: tuple[str, str] = Depends(get_current_user_with_role),
+    user_id: str = Depends(get_current_user),
 ):
     """Send a message and receive a streaming AI response via Server-Sent Events.
 
@@ -113,13 +114,12 @@ async def send_message(
         StreamingResponse: Server-sent event stream of assistant response
         chunks followed by a terminal done event.
     """
-    user_id, user_role = current_user
     logger.info(f"Received send message request for conversation {conversation_id}")
     convo = await service.get_conversation_or_404(conversation_id, user_id)
     validate_provider(convo.provider)
 
     async def event_stream():
-        async for chunk in service.stream_response(convo, request.content, user_role=user_role):
+        async for chunk in service.stream_response(convo, request.content):
             yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
         yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
 

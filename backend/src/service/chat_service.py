@@ -7,9 +7,12 @@ from fastapi import HTTPException, status
 
 from src.schemas.chat_schema import CreateConversationRequest
 from src.repo.conversation_repo import ConversationRepository
+from src.repo.flagged_event_repo import FlaggedEventRepository
 from src.models.conversation_model import Conversation
 from src.providers import stream_from_provider
 from src.service.rag_service import RAGService
+from src.moderation.keyword_filter import is_harmful, MODERATION_RESPONSE
+from src.moderation.exceptions import ContentPolicyError
 from src.core.logger import get_logger
 
 logger = get_logger("CHAT_SERVICE")
@@ -26,7 +29,12 @@ class ChatService:
             document context when available.
     """
 
-    def __init__(self, repo: ConversationRepository, rag: RAGService) -> None:
+    def __init__(
+        self,
+        repo: ConversationRepository,
+        rag: RAGService,
+        flagged_event_repo: FlaggedEventRepository,
+    ) -> None:
         """Initialize the chat service.
 
         Args:
@@ -34,9 +42,12 @@ class ChatService:
                 and message persistence.
             rag (RAGService): Service responsible for document retrieval and
                 context assembly for chat prompts.
+            flagged_event_repo (FlaggedEventRepository): Repository for logging
+                moderation-flagged events.
         """
         self.repo = repo
         self.rag = rag
+        self.flagged_event_repo = flagged_event_repo
 
     async def create_conversation(
         self, user_id: str, request: CreateConversationRequest
@@ -111,8 +122,13 @@ class ChatService:
         messages = await self.repo.get_messages(convo.id)
         return [{"role": m.role, "content": m.content} for m in messages]
 
-    async def stream_response(self, convo: Conversation, content: str, user_role: str = "user"):
+    async def stream_response(self, convo: Conversation, content: str):
         """Persists the user message, streams the provider response, then saves it.
+
+        Runs keyword moderation before calling the provider. If the message is
+        flagged (keyword or provider content policy), logs the event, saves
+        "That's Dangerous" as the assistant reply, and yields it without making
+        or completing a provider API call.
 
         This is an async generator. The conversation ownership must be verified
         by the caller BEFORE invoking this method.
@@ -122,20 +138,29 @@ class ChatService:
             content (str): The user's message content.
 
         Yields:
-            str: Text chunks from the provider's streaming response.
-
-        Raises:
-            Exception: Propagates provider streaming failures to the caller so
-            the endpoint can terminate the stream consistently.
+            str: Text chunks from the provider's streaming response, or the
+            moderation response if the message is flagged.
         """
         logger.info(f"Streaming response for conversation {convo.id} provider={convo.provider}")
+
+        # Layer 1: keyword filter — block before calling the provider
+        if is_harmful(content):
+            logger.warning(f"Keyword filter triggered for conversation {convo.id}")
+            await self.flagged_event_repo.log_event(
+                str(convo.user_id), str(convo.id), content, "keyword", convo.provider
+            )
+            await self.repo.add_message(convo.id, "user", content)
+            await self.repo.add_message(convo.id, "assistant", MODERATION_RESPONSE)
+            yield MODERATION_RESPONSE
+            return
+
         await self.repo.add_message(convo.id, "user", content)
 
         all_messages = await self.repo.get_messages(convo.id)
         messages_payload = [{"role": m.role, "content": m.content} for m in all_messages]
 
         # Inject RAG context as a leading system message if relevant documents exist
-        rag_context = await self.rag.get_context(str(convo.user_id), content, user_role=user_role)
+        rag_context = await self.rag.get_context(str(convo.user_id), content)
         if rag_context:
             system_msg = {
                 "role": "system",
@@ -149,9 +174,19 @@ class ChatService:
             logger.info(f"Injected RAG context ({len(rag_context)} chars) for conversation {convo.id}")
 
         full_response = ""
-        async for chunk in stream_from_provider(convo.provider, convo.model, messages_payload):
-            full_response += chunk
-            yield chunk
+        try:
+            async for chunk in stream_from_provider(convo.provider, convo.model, messages_payload):
+                full_response += chunk
+                yield chunk
+        except ContentPolicyError:
+            # Layer 2: provider content policy — block after provider rejects
+            logger.warning(f"Provider content policy triggered for conversation {convo.id}")
+            await self.flagged_event_repo.log_event(
+                str(convo.user_id), str(convo.id), content, "provider", convo.provider
+            )
+            await self.repo.add_message(convo.id, "assistant", MODERATION_RESPONSE)
+            yield MODERATION_RESPONSE
+            return
 
         await self.repo.add_message(convo.id, "assistant", full_response)
         logger.info(f"Response complete for conversation {convo.id} — {len(full_response)} chars")

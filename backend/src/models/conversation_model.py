@@ -4,7 +4,7 @@ This module defines the Conversation and Message models representing
 AI chat sessions and their individual message exchanges.
 """
 import uuid
-from sqlalchemy import Column, String, ForeignKey, Text, DateTime, BigInteger, Integer, Uuid, Boolean
+from sqlalchemy import Column, String, ForeignKey, Text, DateTime, BigInteger, Integer, Uuid
 from sqlalchemy.sql import func
 
 from src.models.user_model import Base
@@ -60,19 +60,3 @@ class Message(Base):
     content = Column(Text, nullable=False)
     token_count = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-class Alarm(Base):
-    """Audit record for a flagged (harmful/policy-violating) message.
-
-    Attributes:
-        id (uuid.UUID): Primary key.
-        message_id (uuid.UUID): Foreign key to the flagged message.
-        reason (str): Human-readable description of why the message was flagged.
-    """
-
-    __tablename__ = "alarm"
-
-    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    message_id = Column(Uuid(as_uuid=True), ForeignKey("messages.id"), nullable=False)
-    reason = Column(Text, nullable=False)
