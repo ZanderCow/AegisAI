@@ -16,12 +16,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run compose test suite
-        run: docker compose -f infra/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-test
+      - name: Ensure compose test runner is executable
+        run: chmod +x ./scripts/test-compose.sh
 
-      - name: Capture Compose logs on failure
-        if: failure()
-        run: docker compose -f infra/docker-compose.test.yml logs --no-color > compose-test-logs.txt
+      - name: Run compose test suite
+        shell: bash
+        run: |
+          set -o pipefail
+          ./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
 
       - name: Upload Compose logs
         if: failure()

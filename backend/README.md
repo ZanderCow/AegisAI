@@ -84,9 +84,17 @@ you configured above.
 
 ## Running Tests
 
-To run the `pytest` suite, simply use `uv run`. 
-Because of our `pyproject.toml` configuration, `uv` automatically sets the correct `PYTHONPATH` and loads test environment variables from `.env.example`.
+To run the local `pytest` suite, simply use `uv run`.
+Because of our `pyproject.toml` configuration, `uv` automatically sets the
+correct `PYTHONPATH` and loads test environment variables from `.env.example`.
 
 ```bash
 uv run pytest
+```
+
+To run the backend and frontend test suites together in Docker Compose, run the
+following command from the repository root:
+
+```bash
+./scripts/test-compose.sh
 ```

@@ -12,7 +12,7 @@ Always run from the repository root. Use `docker compose`, not `docker-compose`.
 ## Repo-Specific Compose Files
 
 - Dev smoke check: `infra/docker-compose.dev.yml`
-- Backend/frontend unit and integration tests: `infra/docker-compose.test.yml`
+- Backend/frontend unit and integration tests: `./scripts/test-compose.sh` using `infra/docker-compose.test.yml`
 - End-to-end tests: `infra/docker-compose.e2e.yml`
 
 ## Ground Rules
@@ -53,42 +53,47 @@ Always tear it down before continuing:
 docker compose -f infra/docker-compose.dev.yml down
 ```
 
-## Step 2: Backend + Frontend Test Stack
+## Step 2: Backend + Frontend Unit/Integration Tests
 
-Run the compose file that executes backend `pytest` and frontend `vitest`.
+Run the canonical repository test runner from the repository root:
 
 ```bash
-docker compose -f infra/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-test
+./scripts/test-compose.sh
 ```
 
 Important repo detail:
 
-- `backend-test` runs `uv run pytest tests/`
-- `backend-test` writes its exit code to `/results/backend-test.exit`, touches `/results/backend-test.done`, then stays alive so the next container can read the result
-- `frontend-test` waits for `backend-test` to become healthy, then runs `npm run test -- --run`
-- The overall exit code should be taken from `frontend-test`
-- If `backend-test` never becomes healthy, that means setup failed before frontend tests started
+- This script is the canonical local and CI entrypoint for backend/frontend unit and integration tests
+- It builds the `backend-test` and `frontend-test` images, starts `db` and `chroma`, runs backend `pytest`, then runs frontend `vitest`
+- The backend test command is `uv run pytest tests/`
+- The frontend test command is `npm run test -- --run`
+- The script prints a final summary with both exit codes and then cleans the stack up automatically with `docker compose -f infra/docker-compose.test.yml down --volumes --remove-orphans`
+- If the script fails before either test suite starts, treat that as a Docker or environment failure rather than a test regression
 
-After the run, inspect logs before cleanup if you need more detail:
+If you need to preserve the full run output, capture the script output directly:
 
 ```bash
-docker compose -f infra/docker-compose.test.yml logs --no-color backend-test frontend-test
-docker compose -f infra/docker-compose.test.yml ps
+set -o pipefail
+./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
+```
+
+For focused troubleshooting after a failure, you may rerun the underlying test containers manually:
+
+```bash
+docker compose -f infra/docker-compose.test.yml build backend-test frontend-test
+docker compose -f infra/docker-compose.test.yml up -d db chroma
+docker compose -f infra/docker-compose.test.yml run --rm --no-deps backend-test
+docker compose -f infra/docker-compose.test.yml run --rm --no-deps frontend-test
+docker compose -f infra/docker-compose.test.yml down -v --remove-orphans
 ```
 
 Your analysis should explicitly state:
 
 - Whether backend tests passed
 - Whether frontend tests passed
-- Whether frontend tests were blocked because backend-test never became healthy
+- Which exit code the script returned
 - Any failing test names, assertion messages, or stack traces that matter
-- Whether the failure happened before tests actually started
-
-Always tear the stack down:
-
-```bash
-docker compose -f infra/docker-compose.test.yml down -v --remove-orphans
-```
+- Whether the failure happened during image build, infrastructure startup, backend tests, or frontend tests
 
 ## Step 3: E2E Stack
 
@@ -145,3 +150,10 @@ If anything failed, keep the report actionable:
 - Name the failing service or test when available
 - Quote or summarize the most useful error
 - Distinguish test failures from setup failures
+
+When relevant, note that GitHub Actions uses the same unit/integration command by running:
+
+```bash
+set -o pipefail
+./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
+```

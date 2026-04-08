@@ -59,6 +59,25 @@ docker compose -f infra/docker-compose.dev.yml down -v
 
 ---
 
+### Unit and Integration Testing
+
+To run the backend and frontend unit/integration test suites together from a
+single command, use the test runner script:
+
+```bash
+./scripts/test-compose.sh
+```
+
+The script builds the test images, starts the test-only infrastructure, runs
+both suites, and cleans up automatically. If you need to clean up the stack
+manually afterward, run:
+
+```bash
+docker compose -f infra/docker-compose.test.yml down --volumes --remove-orphans
+```
+
+---
+
 ### End-to-End (E2E) Testing Environment
 
 The E2E environment runs the same application stack, including Chroma,
