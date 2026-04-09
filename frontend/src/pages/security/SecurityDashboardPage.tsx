@@ -1,69 +1,151 @@
 import { useEffect, useState } from 'react';
-import type { SecurityLog } from '@/types';
+import type { HistoricChatDashboard } from '@/types';
 import { securityService } from '@/services';
-import { Card, DataTable, Spinner, SearchBar } from '@/components/ui';
-import { FlagIndicator } from '@/components/ui';
+import { Button, Card, SearchBar, Spinner } from '@/components/ui';
+import { HistoricChatTable } from '@/components/security/HistoricChatTable';
+
+const PAGE_SIZE = 10;
 
 export function SecurityDashboardPage() {
-  const [logs, setLogs] = useState<SecurityLog[]>([]);
-  const [stats, setStats] = useState<{ totalLogs: number; flaggedCount: number; recentActivity: number; uniqueUsers: number } | null>(null);
+  const [dashboard, setDashboard] = useState<HistoricChatDashboard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    Promise.all([securityService.getAll(), securityService.getStats()]).then(([logData, statsData]) => {
-      setLogs(logData);
-      setStats(statsData);
-      setIsLoading(false);
-    });
-  }, []);
+    let isCancelled = false;
 
-  if (isLoading) return <Spinner className="mt-20" />;
+    async function loadDashboard() {
+      setIsLoading(true);
+      setError('');
+      try {
+        const data = await securityService.getHistoricChatDashboard(PAGE_SIZE, offset);
+        if (!isCancelled) {
+          setDashboard(data);
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load historic chats');
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
 
-  const filtered = logs.filter(l =>
-    l.userName.toLowerCase().includes(search.toLowerCase()) ||
-    l.action.toLowerCase().includes(search.toLowerCase()) ||
-    l.details.toLowerCase().includes(search.toLowerCase()),
-  );
+    void loadDashboard();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [offset, reloadToken]);
+
+  const filteredHistories = dashboard?.items.filter(history => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+
+    return (
+      history.userEmail.toLowerCase().includes(query) ||
+      history.userId.toLowerCase().includes(query) ||
+      history.title.toLowerCase().includes(query) ||
+      history.provider.toLowerCase().includes(query) ||
+      history.model.toLowerCase().includes(query) ||
+      history.messages.some(message => message.content.toLowerCase().includes(query))
+    );
+  }) ?? [];
+
+  const summary = dashboard?.summary;
+  const total = dashboard?.total ?? 0;
+  const showingFrom = total === 0 ? 0 : offset + 1;
+  const showingTo = Math.min(offset + (dashboard?.items.length ?? 0), total);
+  const hasPreviousPage = offset > 0;
+  const hasNextPage = dashboard ? offset + dashboard.items.length < dashboard.total : false;
 
   const statCards = [
-    { label: 'Total Events', value: stats?.totalLogs ?? 0, color: 'text-blue-400' },
-    { label: 'Flagged Events', value: stats?.flaggedCount ?? 0, color: 'text-red-400' },
-    { label: 'Last 24h Activity', value: stats?.recentActivity ?? 0, color: 'text-green-400' },
-    { label: 'Unique Users', value: stats?.uniqueUsers ?? 0, color: 'text-aegis-400' },
+    { label: 'Total Histories', value: summary?.totalHistories ?? 0, color: 'text-blue-400' },
+    { label: 'Total Messages', value: summary?.totalMessages ?? 0, color: 'text-aegis-400' },
+    { label: 'Last 24h Activity', value: summary?.recentActivity ?? 0, color: 'text-green-400' },
+    { label: 'Unique Users', value: summary?.uniqueUsers ?? 0, color: 'text-yellow-400' },
   ];
 
-  const columns = [
-    { key: 'time', header: 'Time', render: (l: SecurityLog) => (
-      <span className="text-xs text-gray-400">{new Date(l.timestamp).toLocaleString()}</span>
-    )},
-    { key: 'user', header: 'User', render: (l: SecurityLog) => <span className="font-medium text-gray-200">{l.userName}</span> },
-    { key: 'action', header: 'Action', render: (l: SecurityLog) => <span className="text-gray-300">{l.action}</span> },
-    { key: 'resource', header: 'Resource', render: (l: SecurityLog) => <span className="text-gray-300">{l.resource}</span> },
-    { key: 'flag', header: 'Flag', render: (l: SecurityLog) => <FlagIndicator flagType={l.flagType} /> },
-    { key: 'details', header: 'Details', render: (l: SecurityLog) => (
-      <span className="text-xs text-gray-500 max-w-xs truncate block">{l.details}</span>
-    ), className: 'px-4 py-3 text-sm max-w-xs' },
-  ];
+  if (isLoading && !dashboard) {
+    return <Spinner className="mt-20" />;
+  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-100">Security Dashboard</h1>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-100">Security Dashboard</h1>
+        <p className="mt-1 text-sm text-gray-400">
+          Historic chat transcripts across all users, ordered by most recent activity.
+        </p>
+      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(s => (
-          <Card key={s.label}>
-            <p className="text-sm text-gray-400">{s.label}</p>
-            <p className={`text-3xl font-bold mt-1 ${s.color}`}>{s.value}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {statCards.map(stat => (
+          <Card key={stat.label}>
+            <p className="text-sm text-gray-400">{stat.label}</p>
+            <p className={`mt-1 text-3xl font-bold ${stat.color}`}>{stat.value}</p>
           </Card>
         ))}
       </div>
 
-      <Card padding={false}>
-        <div className="p-4 border-b border-gray-800">
-          <SearchBar value={search} onChange={setSearch} placeholder="Search security logs..." />
+      {error && (
+        <div className="flex flex-col gap-3 rounded-xl border border-red-800 bg-red-900/30 px-4 py-4 text-sm text-red-200 sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}</span>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setDashboard(null);
+              setOffset(0);
+              setReloadToken(current => current + 1);
+            }}
+          >
+            Retry
+          </Button>
         </div>
-        <DataTable columns={columns} data={filtered} keyExtractor={l => l.id} emptyMessage="No security logs found" />
+      )}
+
+      <Card padding={false}>
+        <div className="flex flex-col gap-4 border-b border-gray-800 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="lg:w-96">
+            <SearchBar value={search} onChange={setSearch} placeholder="Search chat histories..." />
+          </div>
+          <div className="text-sm text-gray-400">
+            Showing {showingFrom}-{showingTo} of {total} histories
+          </div>
+        </div>
+
+        {isLoading ? (
+          <Spinner className="my-12" />
+        ) : (
+          <HistoricChatTable histories={filteredHistories} />
+        )}
+
+        <div className="flex flex-col gap-3 border-t border-gray-800 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-gray-500">
+            Search filters the currently loaded page. Pagination remains ordered by recent backend activity.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setOffset(current => Math.max(0, current - PAGE_SIZE))}
+              disabled={!hasPreviousPage || isLoading}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setOffset(current => current + PAGE_SIZE)}
+              disabled={!hasNextPage || isLoading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
     </div>
   );

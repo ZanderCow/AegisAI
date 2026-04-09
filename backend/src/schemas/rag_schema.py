@@ -12,6 +12,7 @@ class DocumentOut(BaseModel):
     doc_id: str = Field(description="Stable logical identifier for the indexed document.")
     filename: str = Field(description="Original filename supplied by the user during upload.")
     chunk_count: int = Field(description="Number of text chunks currently stored for the document.")
+    restricted: bool = Field(default=False, description="Whether the document is restricted to privileged roles.")
 
 
 class UploadResponse(BaseModel):
@@ -20,6 +21,7 @@ class UploadResponse(BaseModel):
     doc_id: str = Field(description="Stable logical identifier assigned to the uploaded document.")
     filename: str = Field(description="Original filename supplied by the user during upload.")
     chunk_count: int = Field(description="Number of chunks extracted, embedded, and stored.")
+    restricted: bool = Field(description="Whether the document was indexed as restricted.")
     message: str = Field(description="Human-readable upload summary for the client UI.")
 
 

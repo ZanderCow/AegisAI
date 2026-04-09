@@ -1,5 +1,9 @@
+/**
+ * Mock user records used by admin and role-management views in local UI flows.
+ */
 import type { User } from '@/types';
 
+/** Stable user fixtures that drive mock-only tables and navigation states. */
 export const mockUsers: User[] = [
   {
     id: 'u1',
@@ -50,12 +54,3 @@ export const mockUsers: User[] = [
     lastLogin: '2025-06-10T10:15:00Z',
   },
 ];
-
-export const mockPasswords: Record<string, string> = {
-  'admin@aegisai.com': 'admin123',
-  'sarah@aegisai.com': 'security123',
-  'ivan@aegisai.com': 'it123',
-  'hannah@aegisai.com': 'hr123',
-  'frank@aegisai.com': 'finance123',
-  'tina@aegisai.com': 'it123',
-};

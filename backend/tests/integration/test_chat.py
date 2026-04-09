@@ -222,7 +222,7 @@ async def test_send_message_streams(
     convo_id = convo_resp.json()["conversation_id"]
 
     with (
-        patch("src.api.v1.endpoints.chat.validate_provider", return_value=None),
+        patch("src.service.chat_service.validate_provider", return_value=None),
         patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
     ):
         resp = await client.post(
@@ -254,7 +254,7 @@ async def test_send_message_saves_to_history(
     convo_id = convo_resp.json()["conversation_id"]
 
     with (
-        patch("src.api.v1.endpoints.chat.validate_provider", return_value=None),
+        patch("src.service.chat_service.validate_provider", return_value=None),
         patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
     ):
         await client.post(
@@ -296,7 +296,7 @@ async def test_send_message_to_other_users_conversation_returns_404(
     convo_id = convo_resp.json()["conversation_id"]
 
     with (
-        patch("src.api.v1.endpoints.chat.validate_provider", return_value=None),
+        patch("src.service.chat_service.validate_provider", return_value=None),
         patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
     ):
         resp = await client.post(

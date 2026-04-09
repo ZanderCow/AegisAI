@@ -1,55 +1,51 @@
+/**
+ * Exercises the public signup flow for newly created end users.
+ *
+ * The suite covers both the happy path and the duplicate-email validation
+ * path using one of the deterministic seeded accounts.
+ */
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'crypto';
+import {
+  TEST_USER_PASSWORD,
+  attachPageDebugLogging,
+  getSeededCredentials,
+} from './helpers/auth';
+
+test.beforeEach(({ page }) => {
+  // Surface browser-side errors in CI output when signup assertions fail.
+  attachPageDebugLogging(page);
+});
 
 test.describe('Signup flow', () => {
-    test('successful signup', async ({ page }) => {
-        await page.goto('/signup');
+  test('successful signup', async ({ page }) => {
+    await page.goto('/signup');
 
-        const uniqueEmail = `user_${randomUUID().substring(0, 8)}@example.com`;
+    // Each run creates a unique address because successful signups persist.
+    const uniqueEmail = `user_${randomUUID().substring(0, 8)}@example.com`;
 
-        // The first email input is index 0
-        await page.locator('input[type="email"]').first().fill(uniqueEmail);
+    await page.getByLabel('Email').fill(uniqueEmail);
+    await page.getByLabel('Password', { exact: true }).fill(TEST_USER_PASSWORD);
+    await page.getByLabel('Confirm Password').fill(TEST_USER_PASSWORD);
 
-        // Fill both password and confirm password inputs sequentially
-        const pwInputs = page.locator('input[type="password"]');
-        await pwInputs.nth(0).fill('password123');
-        await pwInputs.nth(1).fill('password123');
+    await page.getByRole('button', { name: 'Sign Up' }).click();
 
-        await page.locator('button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/chat$/);
+    const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
+    expect(token).toBeTruthy();
+  });
 
-        try {
-            // Wait for navigation / redirect to /chat
-            await page.waitForURL('/chat', { timeout: 3000 });
-            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
-            expect(token).toBeTruthy();
-        } catch (e) {
-            // If auth setup is incomplete or fails, assert that an error renders
-            const errorMsg = page.locator('.bg-red-900\\/30.text-red-400');
-            await expect(errorMsg).toBeVisible();
-        }
-    });
+  test('duplicate email signup shows a validation error for a seeded admin user', async ({ page }) => {
+    const admin = getSeededCredentials('admin');
 
-    test('duplicate email signup', async ({ page }) => {
-        await page.goto('/signup');
+    await page.goto('/signup');
+    await page.getByLabel('Email').fill(admin.email);
+    await page.getByLabel('Password', { exact: true }).fill(TEST_USER_PASSWORD);
+    await page.getByLabel('Confirm Password').fill(TEST_USER_PASSWORD);
 
-        const duplicateEmail = 'test_login@example.com';
+    await page.getByRole('button', { name: 'Sign Up' }).click();
 
-        await page.locator('input[type="email"]').first().fill(duplicateEmail);
-
-        const pwInputs = page.locator('input[type="password"]');
-        await pwInputs.nth(0).fill('password123');
-        await pwInputs.nth(1).fill('password123');
-
-        await page.locator('button[type="submit"]').click();
-
-        // The backend should block the duplicate email, returning an error response
-        try {
-            const errorMsg = page.locator('.bg-red-900\\/30.text-red-400').first();
-            await expect(errorMsg).toBeVisible({ timeout: 5000 });
-        } catch (e) {
-            // Allowed duplicate (backend is extremely permissive). Ensure token exists mapping to redirection
-            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
-            expect(token).toBeTruthy();
-        }
-    });
+    await expect(page.locator('p.text-red-400.bg-red-900\\/30')).toContainText('Email already registered');
+    await expect(page).toHaveURL(/\/signup$/);
+  });
 });

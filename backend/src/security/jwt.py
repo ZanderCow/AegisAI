@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.logger import get_logger
+from src.models.user_model import ROLE_SECURITY
 
 logger = get_logger("SECURITY")
 
@@ -95,5 +96,55 @@ async def get_current_user(
     if user is None:
         logger.warning(f"JWT references non-existent user {user_id}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user_id
+
+
+async def get_current_user_with_role(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[str, str]:
+    """Extracts the authenticated user's ID and role from a Bearer token.
+
+    Returns:
+        tuple[str, str]: (user_id, role) extracted from the JWT payload.
+
+    Raises:
+        HTTPException: 401 if the token is expired, invalid, or the user no longer exists.
+    """
+    from src.repo.user_repo import UserRepository
+
+    payload = decode_token(credentials.credentials)
+    user_id = payload.get("sub")
+    if user_id is None:
+        logger.warning("JWT payload missing 'sub' claim")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    user = await UserRepository(db).get_by_id(user_id)
+    if user is None:
+        logger.warning(f"JWT references non-existent user {user_id}")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user_id, user.role
+
+
+async def get_current_security_user(
+    current_user: tuple[str, str] = Depends(get_current_user_with_role),
+) -> str:
+    """Ensure the authenticated user has the dedicated security role.
+
+    Returns:
+        str: The authenticated security user's identifier.
+
+    Raises:
+        HTTPException: 403 when the authenticated user is not a security user.
+    """
+    user_id, role = current_user
+    if role != ROLE_SECURITY:
+        logger.warning("User %s attempted to access a security-only endpoint with role %s", user_id, role)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Security role required",
+        )
 
     return user_id

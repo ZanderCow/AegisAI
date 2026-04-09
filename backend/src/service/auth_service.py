@@ -55,7 +55,7 @@ class AuthService:
         
         logger.info(f"User created successfully: {new_user.id}")
         # 'sub' is the standard subject claim representing the user ID
-        token = create_token({"sub": str(new_user.id), "email": new_user.email})
+        token = create_token({"sub": str(new_user.id), "email": new_user.email, "role": new_user.role})
         return TokenResponse(access_token=token, token_type="bearer")
 
     async def login(self, request: LoginRequest) -> TokenResponse | DuoLoginResponse:
@@ -83,10 +83,9 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
             )
-
         if not settings.MFA_ENABLED:
             logger.info(f"MFA disabled — issuing token directly for user: {user.id}")
-            token = create_token({"sub": str(user.id), "email": user.email})
+            token = create_token({"sub": str(user.id), "email": user.email, "role": user.role})
             return TokenResponse(access_token=token, token_type="bearer")
 
         # MFA path — initiate Duo Universal Prompt flow.
@@ -106,7 +105,13 @@ class AuthService:
         # Encode user identity + Duo state in a short-lived token so the
         # callback endpoint can verify without server-side session storage.
         state_token = create_token(
-            {"sub": str(user.id), "email": user.email, "duo_state": state, "type": "mfa_pending"},
+            {
+                "sub": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "duo_state": state,
+                "type": "mfa_pending",
+            },
             expires_minutes=5,
         )
         return DuoLoginResponse(duo_auth_url=auth_url, state_token=state_token)
@@ -151,5 +156,8 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA verification failed")
 
         logger.info(f"Duo MFA passed — issuing token for user: {user_id}")
-        token = create_token({"sub": user_id, "email": username})
+        token_payload = {"sub": user_id, "email": username}
+        if payload.get("role"):
+            token_payload["role"] = payload["role"]
+        token = create_token(token_payload)
         return TokenResponse(access_token=token, token_type="bearer")

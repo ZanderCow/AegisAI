@@ -15,14 +15,17 @@ from src.core.database import get_db
 from src.schemas.chat_schema import (
     CreateConversationRequest,
     ConversationResponse,
+    HistoricChatDashboardQuery,
+    HistoricChatDashboardResponse,
+    SecurityAlarmEventResponse,
     SendMessageRequest,
     MessageResponse,
 )
 from src.repo.conversation_repo import ConversationRepository
+from src.repo.flagged_event_repo import FlaggedEventRepository
 from src.service.chat_service import ChatService
 from src.service.rag_service import RAGService
-from src.security.jwt import get_current_user
-from src.providers import validate_provider
+from src.security.jwt import get_current_security_user, get_current_user
 from src.core.logger import get_logger
 
 logger = get_logger("CHAT_API")
@@ -43,7 +46,7 @@ def get_chat_service(
     Returns:
         ChatService: An initialized instance of the ChatService.
     """
-    return ChatService(ConversationRepository(session), rag)
+    return ChatService(ConversationRepository(session), rag, FlaggedEventRepository(session))
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -115,10 +118,10 @@ async def send_message(
     """
     logger.info(f"Received send message request for conversation {conversation_id}")
     convo = await service.get_conversation_or_404(conversation_id, user_id)
-    validate_provider(convo.provider)
+    stream = await service.stream_response(convo, request.content)
 
     async def event_stream():
-        async for chunk in service.stream_response(convo, request.content):
+        async for chunk in stream:
             yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
         yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
 
@@ -148,3 +151,38 @@ async def get_messages(
     """
     logger.info(f"Received get messages request for conversation {conversation_id}")
     return await service.get_messages(conversation_id, user_id)
+
+
+@router.get("/security/histories", response_model=HistoricChatDashboardResponse)
+async def get_security_historic_chat_dashboard(
+    query: HistoricChatDashboardQuery = Depends(),
+    service: ChatService = Depends(get_chat_service),
+    _: str = Depends(get_current_security_user),
+):
+    """Return paginated historic chat transcripts for the security dashboard.
+
+    Args:
+        query (HistoricChatDashboardQuery): Pagination controls for the dashboard.
+        service (ChatService): Injected chat service.
+        _ (str): Authenticated security user identifier.
+
+    Returns:
+        HistoricChatDashboardResponse: Historic chat rows ordered by most
+        recent activity first, plus dashboard summary metrics.
+    """
+    logger.info(
+        "Received security historic chat dashboard request limit=%s offset=%s",
+        query.limit,
+        query.offset,
+    )
+    return await service.get_security_chat_histories(query)
+
+
+@router.get("/security/alarms", response_model=list[SecurityAlarmEventResponse])
+async def get_security_alarm_dashboard(
+    service: ChatService = Depends(get_chat_service),
+    _: str = Depends(get_current_security_user),
+):
+    """Return persisted moderation alarm rows for the security flagging dashboard."""
+    logger.info("Received security alarm dashboard request")
+    return await service.get_security_alarm_events()

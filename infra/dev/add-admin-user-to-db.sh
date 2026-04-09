@@ -2,8 +2,12 @@
 
 set -euo pipefail
 
+# Wait for the backend container before importing application code to hash
+# credentials and seed the admin account.
 echo "Waiting for backend health endpoint..."
 python - <<'PY'
+"""Wait for the backend service to report healthy before seeding users."""
+
 import os
 import sys
 import time
@@ -26,11 +30,13 @@ print("Backend did not become healthy in time.", file=sys.stderr)
 sys.exit(1)
 PY
 
+# Upsert the deterministic admin user used by local compose and Playwright tests.
 echo "Seeding dev admin user..."
 python - <<'PY'
+"""Create or update the local development admin user."""
+
 import asyncio
 import os
-import sys
 import uuid
 
 import asyncpg
@@ -39,30 +45,54 @@ from src.security.password import hash_password
 
 
 async def main() -> int:
+    """Upsert the seeded admin user in the local Postgres database.
+
+    Returns:
+        int: Process exit code, where ``0`` indicates the seed completed.
+    """
     raw_database_url = os.environ["DATABASE_URL"]
     database_url = raw_database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-    email = os.environ["ADMIN_EMAIL"]
-    password = os.environ["ADMIN_PASSWORD"]
+    email = os.environ["admin_user_username"]
+    password = os.environ["admin_user_password"]
+    hashed_password = hash_password(password)
 
     conn = await asyncpg.connect(database_url)
     try:
-        row = await conn.fetchrow(
+        existing = await conn.fetchrow(
             """
-            INSERT INTO users (id, email, hashed_password)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (email) DO NOTHING
-            RETURNING id
+            SELECT id
+            FROM users
+            WHERE email = $1
+            """,
+            email,
+        )
+
+        if existing:
+            # Keep credentials and role assignments in sync across container restarts.
+            await conn.execute(
+                """
+                UPDATE users
+                SET hashed_password = $2,
+                    role = 'admin'
+                WHERE email = $1
+                """,
+                email,
+                hashed_password,
+            )
+            print(f"updated admin user: {email}")
+            return 0
+
+        await conn.execute(
+            """
+            INSERT INTO users (id, email, hashed_password, role)
+            VALUES ($1, $2, $3, 'admin')
             """,
             uuid.uuid4(),
             email,
-            hash_password(password),
+            hashed_password,
         )
     finally:
         await conn.close()
-
-    if row is None:
-        print("user already exists")
-        return 0
 
     print(f"created admin user: {email}")
     return 0

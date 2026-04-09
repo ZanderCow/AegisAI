@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
   email         VARCHAR(320) NOT NULL UNIQUE,
   hashed_password VARCHAR(255) NOT NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  role              VARCHAR(20) NOT NULL DEFAULT 'user'
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
@@ -33,10 +34,16 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE TABLE IF NOT EXISTS alarm (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  message_id        UUID NOT NULL REFERENCES messages(id),
-  reason            TEXT NOT NULL
+  user_id           UUID NOT NULL REFERENCES users(id),
+  conversation_id   UUID NOT NULL REFERENCES conversations(id),
+  message_content   TEXT NOT NULL,
+  filter_type       VARCHAR(20) NOT NULL,
+  provider          VARCHAR(50) NOT NULL,
+  reason            TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations (user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages (conversation_id);
-CREATE INDEX IF NOT EXISTS idx_alarms_message_id ON alarms (message_id);
+CREATE INDEX IF NOT EXISTS idx_alarm_user_id ON alarm (user_id);
+CREATE INDEX IF NOT EXISTS idx_alarm_conversation_id ON alarm (conversation_id);

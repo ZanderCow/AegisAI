@@ -3,16 +3,17 @@
 Endpoints allow authenticated users to upload PDFs, list their stored
 documents, and delete documents from the ChromaDB vector store.
 """
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from src.api.dependencies.rag import get_rag_service
+from src.models.user_model import PRIVILEGED_ROLES
 from src.schemas.rag_schema import (
     DocumentOut,
     UploadResponse,
     EmbedRequest,
     EmbedResponse,
 )
-from src.security.jwt import get_current_user
+from src.security.jwt import get_current_user, get_current_user_with_role
 from src.service.rag_service import RAGService, _get_embeddings, _EMBEDDING_MODEL
 from src.core.logger import get_logger
 
@@ -63,17 +64,20 @@ async def create_embeddings(
 @router.post("/documents", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
-    user_id: str = Depends(get_current_user),
+    restricted: bool = Form(False),
+    current_user: tuple[str, str] = Depends(get_current_user_with_role),
     rag: RAGService = Depends(get_rag_service),
 ):
     """Upload a PDF and index it in the vector store.
 
     The file is chunked, embedded via the backend's local ONNX model, and
-    persisted in ChromaDB keyed to the authenticated user.
+    persisted in ChromaDB keyed to the authenticated user. Only security and
+    admin users may mark a document as restricted.
 
     Args:
         file (UploadFile): Uploaded PDF payload to ingest.
-        user_id (str): Authenticated user identifier owning the document.
+        restricted (bool): If True, document is only surfaced to privileged roles.
+        current_user (tuple): Authenticated user identifier and role.
         rag (RAGService): Injected RAG service handling parsing and storage.
 
     Returns:
@@ -81,10 +85,19 @@ async def upload_document(
         chunk count.
 
     Raises:
+        HTTPException: 403 if a non-privileged user attempts to upload as restricted.
         HTTPException: 413 if the PDF exceeds the size limit.
         HTTPException: 422 if the file is not a PDF or contains no usable text.
         HTTPException: 503 if the vector store is unavailable.
     """
+    user_id, user_role = current_user
+
+    if restricted and user_role not in PRIVILEGED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only security or admin users may upload restricted documents.",
+        )
+
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -98,10 +111,10 @@ async def upload_document(
             detail="PDF exceeds the 20 MB size limit.",
         )
 
-    logger.info(f"User {user_id} uploading '{file.filename}' ({len(pdf_bytes)} bytes)")
+    logger.info(f"User {user_id} (role={user_role}) uploading '{file.filename}' restricted={restricted}")
 
     try:
-        result = await rag.add_document(user_id, file.filename, pdf_bytes)
+        result = await rag.add_document(user_id, file.filename, pdf_bytes, restricted=restricted)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     except RuntimeError as exc:
@@ -112,13 +125,13 @@ async def upload_document(
 
 @router.get("/documents", response_model=list[DocumentOut])
 async def list_documents(
-    user_id: str = Depends(get_current_user),
+    current_user: tuple[str, str] = Depends(get_current_user_with_role),
     rag: RAGService = Depends(get_rag_service),
 ):
     """Return all documents currently indexed for the authenticated user.
 
     Args:
-        user_id (str): Authenticated user identifier.
+        current_user (tuple): Authenticated user identifier and role.
         rag (RAGService): Injected RAG service handling document lookup.
 
     Returns:
@@ -128,6 +141,7 @@ async def list_documents(
     Raises:
         HTTPException: 503 if the vector store is unavailable.
     """
+    user_id, _ = current_user
     try:
         return await rag.list_documents(user_id)
     except RuntimeError as exc:
@@ -137,7 +151,7 @@ async def list_documents(
 @router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     doc_id: str,
-    user_id: str = Depends(get_current_user),
+    current_user: tuple[str, str] = Depends(get_current_user_with_role),
     rag: RAGService = Depends(get_rag_service),
 ):
     """Delete a document and all its indexed chunks.
@@ -152,6 +166,7 @@ async def delete_document(
     Raises:
         HTTPException: 503 if the vector store is unavailable.
     """
+    user_id, _ = current_user
     logger.info(f"User {user_id} deleting document {doc_id}")
     try:
         await rag.delete_document(user_id, doc_id)

@@ -115,6 +115,7 @@ class RAGService:
         query: str,
         n_results: int,
         where: dict,
+        include_restricted: bool = False,
     ) -> dict:
         """Run a filtered semantic search against the Chroma collection.
 
@@ -128,8 +129,14 @@ class RAGService:
             dict: Raw Chroma query payload containing matched documents and
             metadata lists.
         """
+        # Non-privileged users only see non-restricted chunks
+        if not include_restricted:
+            effective_where = {"$and": [where, {"restricted": False}]}
+        else:
+            effective_where = dict(where)
+
         # n_results must not exceed the number of docs in the filtered set
-        ids_in_scope = await self._get_ids(collection, where)
+        ids_in_scope = await self._get_ids(collection, effective_where)
         if not ids_in_scope:
             return {"documents": [[]], "metadatas": [[]]}
 
@@ -138,7 +145,7 @@ class RAGService:
         return await collection.query(
             query_embeddings=query_embeddings,
             n_results=capped,
-            where=where,
+            where=effective_where,
             include=["documents", "metadatas"],
         )
 
@@ -147,7 +154,7 @@ class RAGService:
     # ------------------------------------------------------------------
 
     async def add_document(
-        self, user_id: str, filename: str, pdf_bytes: bytes
+        self, user_id: str, filename: str, pdf_bytes: bytes, restricted: bool = False
     ) -> dict:
         """Parse a PDF, chunk it, embed it, and store it in ChromaDB.
 
@@ -178,7 +185,13 @@ class RAGService:
 
         ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
         metadatas = [
-            {"user_id": user_id, "doc_id": doc_id, "filename": filename, "chunk_index": i}
+            {
+                "user_id": user_id,
+                "doc_id": doc_id,
+                "filename": filename,
+                "chunk_index": i,
+                "restricted": restricted,
+            }
             for i in range(len(chunks))
         ]
         embeddings = await _get_embeddings(chunks)
@@ -195,7 +208,7 @@ class RAGService:
             raise self.chroma.unavailable_error("write", exc) from exc
 
         logger.info(f"Stored doc {doc_id} with {len(chunks)} chunks")
-        return {"doc_id": doc_id, "filename": filename, "chunk_count": len(chunks)}
+        return {"doc_id": doc_id, "filename": filename, "chunk_count": len(chunks), "restricted": restricted}
 
     async def list_documents(self, user_id: str) -> list[dict]:
         """Return a deduplicated list of documents for a user.
@@ -221,7 +234,12 @@ class RAGService:
         for meta in result.get("metadatas", []):
             doc_id = meta["doc_id"]
             if doc_id not in docs:
-                docs[doc_id] = {"doc_id": doc_id, "filename": meta["filename"], "chunk_count": 0}
+                docs[doc_id] = {
+                    "doc_id": doc_id,
+                    "filename": meta["filename"],
+                    "chunk_count": 0,
+                    "restricted": meta.get("restricted", False),
+                }
             docs[doc_id]["chunk_count"] += 1
         return list(docs.values())
 
@@ -244,7 +262,7 @@ class RAGService:
         except Exception as exc:
             raise self.chroma.unavailable_error("delete", exc) from exc
 
-    async def get_context(self, user_id: str, query: str, n_results: int = 5) -> str | None:
+    async def get_context(self, user_id: str, query: str, user_role: str = "user", n_results: int = 5) -> str | None:
         """Retrieve the most semantically relevant chunks for a query.
 
         Retrieval failures intentionally fail closed so chat requests can
@@ -259,9 +277,11 @@ class RAGService:
             str | None: Concatenated document context string when matches are
             found, otherwise ``None``.
         """
+        from src.models.user_model import PRIVILEGED_ROLES
+        include_restricted = user_role in PRIVILEGED_ROLES
         try:
             collection = await self.chroma.get_collection()
-            result = await self._query(collection, query, n_results, {"user_id": user_id})
+            result = await self._query(collection, query, n_results, {"user_id": user_id}, include_restricted)
             docs = result.get("documents", [[]])[0]
             metas = result.get("metadatas", [[]])[0]
             if not docs:

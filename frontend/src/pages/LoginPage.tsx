@@ -4,13 +4,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { LoginForm } from '@/components/forms/LoginForm';
 import { Card } from '@/components/ui';
 
+function homeRoute(role?: string): string {
+  if (role === 'security') return '/security/dashboard';
+  if (role === 'admin') return '/admin/dashboard';
+  return '/chat';
+}
+
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, user } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
 
   if (isAuthenticated) {
-    return <Navigate to="/chat" replace />;
+    return <Navigate to={homeRoute(user?.role)} replace />;
   }
 
   const handleLogin = async (email: string, password: string) => {
@@ -20,7 +26,7 @@ export function LoginPage() {
       if (outcome.mfaRequired) {
         window.location.href = outcome.duoAuthUrl;
       } else {
-        navigate('/chat', { replace: true });
+        navigate(homeRoute(outcome.user.role), { replace: true });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');

@@ -3,13 +3,27 @@
 This module orchestrates conversation creation, message persistence,
 and streaming AI responses from the configured provider.
 """
+from collections.abc import AsyncIterator
+from collections import defaultdict
+
 from fastapi import HTTPException, status
 
-from src.schemas.chat_schema import CreateConversationRequest
+from src.schemas.chat_schema import (
+    CreateConversationRequest,
+    HistoricChatDashboardQuery,
+    HistoricChatDashboardResponse,
+    HistoricChatDashboardSummaryResponse,
+    HistoricChatHistoryItemResponse,
+    HistoricChatMessageResponse,
+    SecurityAlarmEventResponse,
+)
 from src.repo.conversation_repo import ConversationRepository
+from src.repo.flagged_event_repo import FlaggedEventRepository
 from src.models.conversation_model import Conversation
-from src.providers import stream_from_provider
+from src.providers import stream_from_provider, validate_provider
 from src.service.rag_service import RAGService
+from src.moderation.keyword_filter import is_harmful, MODERATION_RESPONSE
+from src.moderation.exceptions import ContentPolicyError
 from src.core.logger import get_logger
 
 logger = get_logger("CHAT_SERVICE")
@@ -26,7 +40,12 @@ class ChatService:
             document context when available.
     """
 
-    def __init__(self, repo: ConversationRepository, rag: RAGService) -> None:
+    def __init__(
+        self,
+        repo: ConversationRepository,
+        rag: RAGService,
+        flagged_event_repo: FlaggedEventRepository,
+    ) -> None:
         """Initialize the chat service.
 
         Args:
@@ -34,9 +53,12 @@ class ChatService:
                 and message persistence.
             rag (RAGService): Service responsible for document retrieval and
                 context assembly for chat prompts.
+            flagged_event_repo (FlaggedEventRepository): Repository for logging
+                moderation-flagged events.
         """
         self.repo = repo
         self.rag = rag
+        self.flagged_event_repo = flagged_event_repo
 
     async def create_conversation(
         self, user_id: str, request: CreateConversationRequest
@@ -111,24 +133,47 @@ class ChatService:
         messages = await self.repo.get_messages(convo.id)
         return [{"role": m.role, "content": m.content} for m in messages]
 
-    async def stream_response(self, convo: Conversation, content: str):
-        """Persists the user message, streams the provider response, then saves it.
+    async def stream_response(
+        self, convo: Conversation, content: str
+    ) -> AsyncIterator[str]:
+        """Prepare and return a response stream for a chat message.
 
-        This is an async generator. The conversation ownership must be verified
-        by the caller BEFORE invoking this method.
+        Runs keyword moderation before calling the provider. If the message is
+        flagged (keyword or provider content policy), logs the event, saves
+        "That's Dangerous" as the assistant reply, and yields it without making
+        or completing a provider API call.
+
+        Provider validation is performed before returning the stream so safe
+        messages still fail as clean HTTP errors instead of mid-stream.
+        The conversation ownership must be verified by the caller BEFORE
+        invoking this method.
 
         Args:
             convo (Conversation): The verified conversation model.
             content (str): The user's message content.
 
-        Yields:
-            str: Text chunks from the provider's streaming response.
-
-        Raises:
-            Exception: Propagates provider streaming failures to the caller so
-            the endpoint can terminate the stream consistently.
+        Returns:
+            AsyncIterator[str]: Text chunks from the provider's streaming
+            response, or the moderation response if the message is flagged.
         """
         logger.info(f"Streaming response for conversation {convo.id} provider={convo.provider}")
+
+        # Layer 1: keyword filter — block before calling the provider
+        if is_harmful(content):
+            logger.warning(f"Keyword filter triggered for conversation {convo.id}")
+            await self.flagged_event_repo.log_event(
+                str(convo.user_id), str(convo.id), content, "keyword", convo.provider
+            )
+            await self.repo.add_message(convo.id, "user", content)
+            await self.repo.add_message(convo.id, "assistant", MODERATION_RESPONSE)
+
+            async def moderation_response() -> AsyncIterator[str]:
+                yield MODERATION_RESPONSE
+
+            return moderation_response()
+
+        validate_provider(convo.provider)
+
         await self.repo.add_message(convo.id, "user", content)
 
         all_messages = await self.repo.get_messages(convo.id)
@@ -148,10 +193,101 @@ class ChatService:
             messages_payload = [system_msg] + messages_payload
             logger.info(f"Injected RAG context ({len(rag_context)} chars) for conversation {convo.id}")
 
-        full_response = ""
-        async for chunk in stream_from_provider(convo.provider, convo.model, messages_payload):
-            full_response += chunk
-            yield chunk
+        async def provider_response() -> AsyncIterator[str]:
+            full_response = ""
+            try:
+                async for chunk in stream_from_provider(
+                    convo.provider, convo.model, messages_payload
+                ):
+                    full_response += chunk
+                    yield chunk
+            except ContentPolicyError:
+                # Layer 2: provider content policy — block after provider rejects
+                logger.warning(f"Provider content policy triggered for conversation {convo.id}")
+                await self.flagged_event_repo.log_event(
+                    str(convo.user_id), str(convo.id), content, "provider", convo.provider
+                )
+                await self.repo.add_message(convo.id, "assistant", MODERATION_RESPONSE)
+                yield MODERATION_RESPONSE
+                return
 
-        await self.repo.add_message(convo.id, "assistant", full_response)
-        logger.info(f"Response complete for conversation {convo.id} — {len(full_response)} chars")
+            await self.repo.add_message(convo.id, "assistant", full_response)
+            logger.info(
+                f"Response complete for conversation {convo.id} — {len(full_response)} chars"
+            )
+
+        return provider_response()
+
+    async def get_security_chat_histories(
+        self,
+        query: HistoricChatDashboardQuery,
+    ) -> HistoricChatDashboardResponse:
+        """Return paginated historic chat data for the security dashboard.
+
+        Args:
+            query (HistoricChatDashboardQuery): Applied pagination controls.
+
+        Returns:
+            HistoricChatDashboardResponse: Ordered conversation histories and
+            summary metrics for the dashboard UI.
+        """
+        total, conversation_rows = await self.repo.get_historic_chat_page(
+            limit=query.limit,
+            offset=query.offset,
+        )
+        conversation_ids = [row["conversation_id"] for row in conversation_rows]
+        messages = await self.repo.get_messages_for_conversations(conversation_ids)
+        summary = await self.repo.get_historic_chat_summary()
+
+        messages_by_conversation: dict[str, list[HistoricChatMessageResponse]] = defaultdict(list)
+        for message in messages:
+            messages_by_conversation[str(message.conversation_id)].append(
+                HistoricChatMessageResponse(
+                    id=str(message.id),
+                    role=message.role,
+                    content=message.content,
+                    created_at=message.created_at,
+                )
+            )
+
+        items = [
+            HistoricChatHistoryItemResponse(
+                conversation_id=str(row["conversation_id"]),
+                title=str(row["title"]),
+                user_id=str(row["user_id"]),
+                user_email=str(row["user_email"]),
+                provider=str(row["provider"]),
+                model=str(row["model"]),
+                created_at=row["created_at"],
+                last_activity_at=row["last_activity_at"],
+                message_count=int(row["message_count"]),
+                messages=messages_by_conversation[str(row["conversation_id"])],
+            )
+            for row in conversation_rows
+        ]
+
+        return HistoricChatDashboardResponse(
+            items=items,
+            total=total,
+            limit=query.limit,
+            offset=query.offset,
+            summary=HistoricChatDashboardSummaryResponse(**summary),
+        )
+
+    async def get_security_alarm_events(self) -> list[SecurityAlarmEventResponse]:
+        """Return persisted moderation alarms for the live security flagging dashboard."""
+        rows = await self.flagged_event_repo.get_dashboard_events()
+        return [
+            SecurityAlarmEventResponse(
+                id=str(row["id"]),
+                user_id=str(row["user_id"]),
+                user_email=str(row["user_email"]),
+                conversation_id=str(row["conversation_id"]),
+                message_content=str(row["message_content"]),
+                filter_type=str(row["filter_type"]),
+                provider=str(row["provider"]),
+                reason=row["reason"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]

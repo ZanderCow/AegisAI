@@ -51,6 +51,79 @@ services:
         condition: service_healthy
       chroma:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  add-admin-user-to-db:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - ../backend:/app
+      - ../infra:/infra:ro
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
+      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      admin_user_username: "${admin_user_username:-admin@gmail.com}"
+      admin_user_password: "${admin_user_password:-AegisAdmin!2026}"
+      BACKEND_HEALTH_URL: ${BACKEND_HEALTH_URL:-http://backend:8000/health}
+    command:
+      [
+        "bash",
+        "-lc",
+        "bash /infra/dev/add-admin-user-to-db.sh && touch /tmp/admin-seeded && tail -f /dev/null",
+      ]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/admin-seeded"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  add-security-user-to-db:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - ../backend:/app
+      - ../infra:/infra:ro
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
+      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      security_username: "${security_username:-security@gmail.com}"
+      security_password: "${security_password:-AegisSecurity!2026}"
+      BACKEND_HEALTH_URL: ${BACKEND_HEALTH_URL:-http://backend:8000/health}
+    command:
+      [
+        "bash",
+        "-lc",
+        "bash /infra/dev/add-security-user-to-db.sh && touch /tmp/security-seeded && tail -f /dev/null",
+      ]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/security-seeded"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
 
   frontend:
     build:
@@ -74,6 +147,10 @@ services:
       # Playwright runner endpoints.
       FRONTEND_URL: ${FRONTEND_URL:-http://frontend:5173}
       BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
+      admin_user_username: "${admin_user_username:-admin@gmail.com}"
+      admin_user_password: "${admin_user_password:-AegisAdmin!2026}"
+      security_username: "${security_username:-security@gmail.com}"
+      security_password: "${security_password:-AegisSecurity!2026}"
       # Provider credentials forwarded to the E2E runner.
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -82,8 +159,14 @@ services:
       E2E_PROVIDER: ${E2E_PROVIDER:-}
       E2E_MODEL: ${E2E_MODEL:-}
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+      add-admin-user-to-db:
+        condition: service_healthy
+      add-security-user-to-db:
+        condition: service_healthy
     command: ["sh", "-c", "npm ci && echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
 
 volumes:

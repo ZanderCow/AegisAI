@@ -4,11 +4,14 @@ This module isolates all SQLAlchemy ORM queries related to the chat
 feature from the rest of the application, following the layered architecture.
 """
 import uuid
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from src.models.conversation_model import Conversation, Message
+from src.models.user_model import User
 from src.core.logger import get_logger
 
 logger = get_logger("CONVERSATION_REPOSITORY")
@@ -122,3 +125,130 @@ class ConversationRepository:
         messages = list(result.scalars().all())
         logger.info(f"Found {len(messages)} messages")
         return messages
+
+    async def get_historic_chat_page(
+        self,
+        limit: int,
+        offset: int,
+    ) -> tuple[int, list[dict[str, object]]]:
+        """Return a paginated page of persisted conversations across all users.
+
+        Conversations are ordered by most recent activity, where activity is
+        defined as the latest message timestamp or the conversation creation
+        time when no messages exist yet.
+
+        Args:
+            limit (int): Maximum number of conversations to return.
+            offset (int): Number of conversations to skip.
+
+        Returns:
+            tuple[int, list[dict[str, object]]]: Total conversation count and
+            a page of normalized conversation metadata rows.
+        """
+        logger.info("Fetching historic chat page limit=%s offset=%s", limit, offset)
+        total_result = await self.session.execute(
+            select(func.count()).select_from(Conversation)
+        )
+        total = int(total_result.scalar_one() or 0)
+
+        last_activity_expr = func.coalesce(
+            func.max(Message.created_at),
+            Conversation.created_at,
+        )
+
+        result = await self.session.execute(
+            select(
+                Conversation.id,
+                Conversation.title,
+                Conversation.user_id,
+                User.email,
+                Conversation.provider,
+                Conversation.model,
+                Conversation.created_at,
+                last_activity_expr.label("last_activity_at"),
+                func.count(Message.id).label("message_count"),
+            )
+            .join(User, Conversation.user_id == User.id)
+            .outerjoin(Message, Message.conversation_id == Conversation.id)
+            .group_by(
+                Conversation.id,
+                Conversation.title,
+                Conversation.user_id,
+                User.email,
+                Conversation.provider,
+                Conversation.model,
+                Conversation.created_at,
+            )
+            .order_by(last_activity_expr.desc(), Conversation.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        rows = []
+        for row in result.all():
+            rows.append(
+                {
+                    "conversation_id": row.id,
+                    "title": row.title,
+                    "user_id": row.user_id,
+                    "user_email": row.email,
+                    "provider": row.provider,
+                    "model": row.model,
+                    "created_at": row.created_at,
+                    "last_activity_at": row.last_activity_at,
+                    "message_count": int(row.message_count or 0),
+                }
+            )
+
+        logger.info("Historic chat page returned %s conversations", len(rows))
+        return total, rows
+
+    async def get_messages_for_conversations(
+        self,
+        conversation_ids: list[uuid.UUID],
+    ) -> list[Message]:
+        """Return all messages for the provided conversations in stable order.
+
+        Args:
+            conversation_ids (list[uuid.UUID]): Conversation identifiers to load.
+
+        Returns:
+            list[Message]: Messages ordered by conversation and creation time.
+        """
+        if not conversation_ids:
+            return []
+
+        logger.info("Fetching messages for %s conversations", len(conversation_ids))
+        result = await self.session.execute(
+            select(Message)
+            .where(Message.conversation_id.in_(conversation_ids))
+            .order_by(Message.conversation_id, Message.created_at)
+        )
+        messages = list(result.scalars().all())
+        logger.info("Found %s historic messages", len(messages))
+        return messages
+
+    async def get_historic_chat_summary(self) -> dict[str, int]:
+        """Return top-line counts for the security historic chat dashboard."""
+        logger.info("Fetching historic chat dashboard summary")
+        day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+
+        total_histories_result = await self.session.execute(
+            select(func.count()).select_from(Conversation)
+        )
+        total_messages_result = await self.session.execute(
+            select(func.count()).select_from(Message)
+        )
+        recent_activity_result = await self.session.execute(
+            select(func.count()).select_from(Message).where(Message.created_at >= day_ago)
+        )
+        unique_users_result = await self.session.execute(
+            select(func.count(func.distinct(Conversation.user_id))).select_from(Conversation)
+        )
+
+        return {
+            "total_histories": int(total_histories_result.scalar_one() or 0),
+            "total_messages": int(total_messages_result.scalar_one() or 0),
+            "recent_activity": int(recent_activity_result.scalar_one() or 0),
+            "unique_users": int(unique_users_result.scalar_one() or 0),
+        }

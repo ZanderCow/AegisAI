@@ -1,21 +1,28 @@
+/**
+ * End-to-end coverage for document indexing and grounded chat retrieval.
+ *
+ * The suite creates a tiny PDF fixture on the fly, uploads it through the RAG
+ * UI, and then verifies that a chat conversation can retrieve the known secret
+ * from the indexed document.
+ */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { randomUUID } from 'crypto';
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
+import { attachPageDebugLogging, createAndLoginUser } from './helpers/auth';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
-const PASSWORD = 'password123';
 const PDF_FILENAME = 'aegis-rag-reference.pdf';
 const PDF_SECRET = 'AEGIS-2026-SECURE';
 const PDF_TEXT = `Aegis handbook: The office Wi-Fi password is ${PDF_SECRET}.`;
 const QUESTION = 'According to the uploaded document, reply with only the exact office Wi-Fi password.';
 
+/** Maps provider ids to their user-facing labels in the new-conversation modal. */
 const PROVIDER_LABELS = {
     groq: 'Groq',
     gemini: 'Gemini',
     deepseek: 'DeepSeek',
 } as const;
 
+/** Mirrors the frontend defaults so the test can assert provider-driven model changes. */
 const DEFAULT_MODELS = {
     groq: 'llama-3.1-8b-instant',
     gemini: 'gemini-2.5-flash',
@@ -24,6 +31,12 @@ const DEFAULT_MODELS = {
 
 type ProviderName = keyof typeof PROVIDER_LABELS;
 
+/**
+ * Reports whether the selected provider has the API key needed for a live RAG run.
+ *
+ * @param provider - Provider id requested by the test configuration.
+ * @returns True when the matching provider API key is present in the environment.
+ */
 function providerHasKey(provider: ProviderName): boolean {
     const envByProvider = {
         groq: process.env.GROQ_API_KEY,
@@ -34,6 +47,16 @@ function providerHasKey(provider: ProviderName): boolean {
     return !!envByProvider[provider];
 }
 
+/**
+ * Resolves the provider and model used for the RAG E2E scenario.
+ *
+ * The test honors explicit `E2E_PROVIDER` and `E2E_MODEL` overrides first.
+ * When no override is provided, it selects the first provider that has a
+ * configured API key so local and CI environments can share the same suite.
+ *
+ * @returns The provider configuration to use, or `null` when no live provider is configured.
+ * @throws Error When `E2E_PROVIDER` names an unsupported provider or lacks its required API key.
+ */
 function getProviderConfig():
     | { id: ProviderName; label: string; model: string }
     | null {
@@ -67,10 +90,25 @@ function getProviderConfig():
     return null;
 }
 
+/**
+ * Escapes PDF content stream characters that would otherwise break the fixture.
+ *
+ * @param text - Plain text injected into the generated PDF.
+ * @returns Text escaped for use inside a literal PDF string.
+ */
 function escapePdfText(text: string): string {
     return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 }
 
+/**
+ * Builds a minimal single-page PDF that contains the provided text.
+ *
+ * The fixture is intentionally tiny so the test controls the indexed content
+ * without depending on checked-in binary assets.
+ *
+ * @param text - Text content rendered onto the single PDF page.
+ * @returns A PDF buffer ready to upload through the documents page.
+ */
 function buildPdfBuffer(text: string): Buffer {
     const stream = `BT\n/F1 18 Tf\n72 120 Td\n(${escapePdfText(text)}) Tj\nET\n`;
     const objects = [
@@ -99,29 +137,19 @@ function buildPdfBuffer(text: string): Buffer {
     return Buffer.from(pdf, 'latin1');
 }
 
+/**
+ * Writes the generated PDF fixture to the current test's output directory.
+ *
+ * @param path - Absolute file path where the PDF should be created.
+ */
 function createPdfFixture(path: string): void {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, buildPdfBuffer(PDF_TEXT));
 }
 
-async function createUser(email: string, request: APIRequestContext) {
-    const response = await request.post(`${BACKEND_URL}/api/v1/auth/signup`, {
-        data: { email, password: PASSWORD },
-    });
-    expect(response.ok()).toBeTruthy();
-}
-
-async function login(page: Page, email: string) {
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill(PASSWORD);
-    await page.getByRole('button', { name: 'Sign In' }).click();
-    await expect(page).toHaveURL(/\/chat/);
-}
-
 test.beforeEach(({ page }) => {
-    page.on('console', msg => console.log('BROWSER:', msg.text()));
-    page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
+    // Mirror browser console output in the terminal for easier CI debugging.
+    attachPageDebugLogging(page);
 });
 
 test.describe('RAG document upload and chat retrieval', () => {
@@ -133,13 +161,13 @@ test.describe('RAG document upload and chat retrieval', () => {
             return;
         }
 
-        const email = `rag_${randomUUID().slice(0, 8)}@example.com`;
         const pdfPath = testInfo.outputPath(PDF_FILENAME);
         createPdfFixture(pdfPath);
 
-        await createUser(email, request);
-        await login(page, email);
+        await createAndLoginUser(page, request, 'rag');
 
+        // Use a separate chat tab so we verify retrieval from a fresh conversation
+        // while the original page stays focused on document upload progress.
         const chatPage = await page.context().newPage();
         chatPage.on('console', msg => console.log('CHAT TAB:', msg.text()));
         chatPage.on('pageerror', err => console.log('CHAT TAB ERROR:', err.message));
@@ -187,6 +215,8 @@ test.describe('RAG document upload and chat retrieval', () => {
         const sendResponse = await sendResponsePromise;
         expect(sendResponse.ok()).toBeTruthy();
 
-        await expect(chatPage.getByText(PDF_SECRET)).toBeVisible({ timeout: 90_000 });
+        await expect(
+            chatPage.locator('.text-sm.whitespace-pre-wrap.leading-relaxed').filter({ hasText: PDF_SECRET }),
+        ).toBeVisible({ timeout: 90_000 });
     });
 });

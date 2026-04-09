@@ -3,8 +3,14 @@ import { Navigate, useNavigate, Link } from 'react-router';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, Input, Button } from '@/components/ui';
 
+function homeRoute(role?: string): string {
+  if (role === 'security') return '/security/dashboard';
+  if (role === 'admin') return '/admin/dashboard';
+  return '/chat';
+}
+
 export function SignupPage() {
-  const { isAuthenticated, signup } = useAuth();
+  const { isAuthenticated, signup, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,7 +19,7 @@ export function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   if (isAuthenticated) {
-    return <Navigate to="/chat" replace />;
+    return <Navigate to={homeRoute(user?.role)} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -27,8 +33,8 @@ export function SignupPage() {
 
     setIsLoading(true);
     try {
-      await signup(email, password);
-      navigate('/chat', { replace: true });
+      const signedUpUser = await signup(email, password);
+      navigate(homeRoute(signedUpUser.role), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create account');
     } finally {
