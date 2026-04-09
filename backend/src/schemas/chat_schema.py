@@ -38,7 +38,7 @@ class MessageResponse(BaseModel):
 class HistoricChatDashboardQuery(BaseModel):
     """Pagination controls for the security historic chat dashboard."""
 
-    limit: int = Field(default=10, ge=1, le=100, description="Maximum number of histories to return.")
+    limit: int = Field(default=10, ge=1, le=1000, description="Maximum number of histories to return.")
     offset: int = Field(default=0, ge=0, description="Number of histories to skip before returning results.")
 
 

@@ -60,7 +60,7 @@ test.describe('Historic chat access', () => {
 
     await expect(page).toHaveURL(/\/security\/dashboard$/);
     const securityToken = await loginViaApi(request, getSeededCredentials('security'));
-    const historiesResponse = await request.get(`${BACKEND_URL}/api/v1/chat/security/histories?limit=100&offset=0`, {
+    const historiesResponse = await request.get(`${BACKEND_URL}/api/v1/chat/security/histories?limit=1000&offset=0`, {
       headers: {
         Authorization: `Bearer ${securityToken}`,
       },

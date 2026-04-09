@@ -13,7 +13,7 @@ Always run from the repository root. Use `docker compose`, not `docker-compose`.
 
 - Dev smoke check: `infra/docker-compose.dev.yml`
 - Backend/frontend unit and integration tests: `./scripts/test-compose.sh` using `infra/docker-compose.test.yml`
-- End-to-end tests: `infra/docker-compose.e2e.yml`
+- End-to-end tests: `./scripts/test-compose-e2e.sh` using `infra/docker-compose.e2e.yml`
 
 ## Ground Rules
 
@@ -97,17 +97,34 @@ Your analysis should explicitly state:
 
 ## Step 3: E2E Stack
 
-Run the full E2E environment and use the Playwright container's exit code as the result.
+## Step 3: E2E Stack
+
+Run the canonical repository E2E test runner from the repository root:
 
 ```bash
-docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
+./scripts/test-compose-e2e.sh
 ```
 
-If you need more detail before cleanup:
+Important repo detail:
+
+- This script builds the images, starts the infrastructure dependencies, and explicitly isolates Playwright logging via a `docker compose run` command.
+- Like the unit test wrapper, it prints an exact exit code at the end and automatically tears down the stack using `down -v --remove-orphans`.
+- If the script fails before tests start, treat that as an environment or setup failure rather than an E2E regression.
+
+If you need to preserve the full run output, capture the script output directly:
 
 ```bash
-docker compose -f infra/docker-compose.e2e.yml logs --no-color e2e backend frontend
-docker compose -f infra/docker-compose.e2e.yml ps
+set -o pipefail
+./scripts/test-compose-e2e.sh 2>&1 | tee compose-e2e-logs.txt
+```
+
+For focused troubleshooting after a failure, you may rerun the underlying test containers manually:
+
+```bash
+docker compose -f infra/docker-compose.e2e.yml build
+docker compose -f infra/docker-compose.e2e.yml up -d backend frontend add-admin-user-to-db add-security-user-to-db
+docker compose -f infra/docker-compose.e2e.yml run --rm e2e
+docker compose -f infra/docker-compose.e2e.yml down -v --remove-orphans
 ```
 
 Notes:
@@ -117,12 +134,6 @@ Notes:
 - `rag.spec.ts` skips when none of `GROQ_API_KEY`, `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY` is set
 - If `E2E_PROVIDER` is set without its matching API key, treat that as configuration failure
 - If the suite passes with one or more skipped tests, report that clearly instead of calling it a clean full pass
-
-Always tear the stack down:
-
-```bash
-docker compose -f infra/docker-compose.e2e.yml down -v --remove-orphans
-```
 
 ## Final Report Format
 
@@ -151,9 +162,14 @@ If anything failed, keep the report actionable:
 - Quote or summarize the most useful error
 - Distinguish test failures from setup failures
 
-When relevant, note that GitHub Actions uses the same unit/integration command by running:
+When relevant, note that GitHub Actions uses the same compose wrappers by running:
 
 ```bash
+# For unit/integration tests:
 set -o pipefail
 ./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
+
+# For E2E tests:
+set -o pipefail
+./scripts/test-compose-e2e.sh 2>&1 | tee compose-e2e-logs.txt
 ```

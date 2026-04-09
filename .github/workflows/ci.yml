@@ -59,16 +59,17 @@ jobs:
           echo "Set one of GROQ_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY in repository secrets."
           exit 1
 
+      - name: Ensure e2e test runner is executable
+        run: chmod +x ./scripts/test-compose-e2e.sh
+
       - name: Run E2E compose tests
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
-
-      - name: Capture Compose logs on failure
-        if: failure()
-        run: docker compose -f infra/docker-compose.e2e.yml logs --no-color > compose-e2e-logs.txt
+        run: |
+          set -o pipefail
+          ./scripts/test-compose-e2e.sh 2>&1 | tee compose-e2e-logs.txt
 
       - name: Upload Compose logs
         if: failure()
