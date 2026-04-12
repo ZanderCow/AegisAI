@@ -34,7 +34,7 @@ export function ChatPage() {
   const [createError, setCreateError] = useState('');
 
   useEffect(() => {
-    loadConversations();
+    void loadConversations();
   }, [loadConversations]);
 
   const handleProviderChange = (provider: string) => {
@@ -72,7 +72,7 @@ export function ChatPage() {
           currentId={currentConversation?.id || null}
           onSelect={conv => { selectConversation(conv); setShowList(false); }}
           onNew={() => { setShowNewForm(true); setCreateError(''); }}
-          onDelete={deleteConversation}
+          onDelete={conversationId => { void deleteConversation(conversationId); }}
         />
       </div>
 

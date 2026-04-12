@@ -1,8 +1,10 @@
 /**
  * Verifies route guards and sidebar visibility for each supported role.
  *
- * The matrix intentionally mixes direct URL navigation and sidebar checks so
- * we cover both authorization middleware and role-aware navigation chrome.
+ * Test Flow:
+ * 1. "User": Access chat/docs; forbidden from admin/security paths; verify sidebar limits.
+ * 2. "Admin": Access admin/user dashboards; verify sidebar management items.
+ * 3. "Security": Access security dashboard; forbidden from chat; verify security sidebar items.
  */
 import { test, expect } from '@playwright/test';
 import {

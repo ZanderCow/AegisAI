@@ -3,9 +3,9 @@ CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(320) NOT NULL UNIQUE,
   hashed_password VARCHAR(255) NOT NULL,
+  role          VARCHAR(50) NOT NULL DEFAULT 'user',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  role              VARCHAR(20) NOT NULL DEFAULT 'user'
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
@@ -47,3 +47,19 @@ CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations (user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_alarm_user_id ON alarm (user_id);
 CREATE INDEX IF NOT EXISTS idx_alarm_conversation_id ON alarm (conversation_id);
+
+CREATE TABLE IF NOT EXISTS documents (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title         VARCHAR(255) NOT NULL,
+  description   TEXT NOT NULL DEFAULT '',
+  filename      VARCHAR(255) NOT NULL,
+  file_size     BIGINT NOT NULL DEFAULT 0,
+  status        VARCHAR(50) NOT NULL DEFAULT 'active',
+  uploaded_by   UUID NOT NULL REFERENCES users(id),
+  allowed_roles TEXT[] NOT NULL DEFAULT '{}',
+  chroma_doc_id VARCHAR(255),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_uploaded_by ON documents (uploaded_by);

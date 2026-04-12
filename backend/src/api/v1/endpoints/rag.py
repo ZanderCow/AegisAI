@@ -1,27 +1,19 @@
-"""HTTP router for RAG (Retrieval-Augmented Generation) document management.
+"""HTTP router for RAG (Retrieval-Augmented Generation) embeddings utility.
 
-Endpoints allow authenticated users to upload PDFs, list their stored
-documents, and delete documents from the ChromaDB vector store.
+The document upload/list/delete endpoints have moved to /api/v1/documents
+and are now role-scoped. This router retains the embeddings endpoint for
+generating raw embedding vectors.
 """
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from src.api.dependencies.rag import get_rag_service
-from src.models.user_model import PRIVILEGED_ROLES
-from src.schemas.rag_schema import (
-    DocumentOut,
-    UploadResponse,
-    EmbedRequest,
-    EmbedResponse,
-)
-from src.security.jwt import get_current_user, get_current_user_with_role
-from src.service.rag_service import RAGService, _get_embeddings, _EMBEDDING_MODEL
+from src.schemas.rag_schema import EmbedRequest, EmbedResponse
+from src.security.jwt import get_current_user
+from src.service.rag_service import _get_embeddings, _EMBEDDING_MODEL
 from src.core.logger import get_logger
 
 logger = get_logger("RAG_API")
 
 router = APIRouter(prefix="/rag", tags=["rag"])
-
-_MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 @router.post("/embeddings", response_model=EmbedResponse)
@@ -59,116 +51,3 @@ async def create_embeddings(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     return EmbedResponse(embeddings=vectors, model=_EMBEDDING_MODEL)
-
-
-@router.post("/documents", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
-async def upload_document(
-    file: UploadFile = File(...),
-    restricted: bool = Form(False),
-    current_user: tuple[str, str] = Depends(get_current_user_with_role),
-    rag: RAGService = Depends(get_rag_service),
-):
-    """Upload a PDF and index it in the vector store.
-
-    The file is chunked, embedded via the backend's local ONNX model, and
-    persisted in ChromaDB keyed to the authenticated user. Only security and
-    admin users may mark a document as restricted.
-
-    Args:
-        file (UploadFile): Uploaded PDF payload to ingest.
-        restricted (bool): If True, document is only surfaced to privileged roles.
-        current_user (tuple): Authenticated user identifier and role.
-        rag (RAGService): Injected RAG service handling parsing and storage.
-
-    Returns:
-        UploadResponse: Upload summary containing the stored document ID and
-        chunk count.
-
-    Raises:
-        HTTPException: 403 if a non-privileged user attempts to upload as restricted.
-        HTTPException: 413 if the PDF exceeds the size limit.
-        HTTPException: 422 if the file is not a PDF or contains no usable text.
-        HTTPException: 503 if the vector store is unavailable.
-    """
-    user_id, user_role = current_user
-
-    if restricted and user_role not in PRIVILEGED_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only security or admin users may upload restricted documents.",
-        )
-
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Only PDF files are supported.",
-        )
-
-    pdf_bytes = await file.read()
-    if len(pdf_bytes) > _MAX_PDF_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="PDF exceeds the 20 MB size limit.",
-        )
-
-    logger.info(f"User {user_id} (role={user_role}) uploading '{file.filename}' restricted={restricted}")
-
-    try:
-        result = await rag.add_document(user_id, file.filename, pdf_bytes, restricted=restricted)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-
-    return UploadResponse(**result, message=f"Indexed {result['chunk_count']} chunks successfully.")
-
-
-@router.get("/documents", response_model=list[DocumentOut])
-async def list_documents(
-    current_user: tuple[str, str] = Depends(get_current_user_with_role),
-    rag: RAGService = Depends(get_rag_service),
-):
-    """Return all documents currently indexed for the authenticated user.
-
-    Args:
-        current_user (tuple): Authenticated user identifier and role.
-        rag (RAGService): Injected RAG service handling document lookup.
-
-    Returns:
-        list[DocumentOut]: All logical documents currently indexed for the
-        authenticated user.
-
-    Raises:
-        HTTPException: 503 if the vector store is unavailable.
-    """
-    user_id, _ = current_user
-    try:
-        return await rag.list_documents(user_id)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-
-
-@router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_document(
-    doc_id: str,
-    current_user: tuple[str, str] = Depends(get_current_user_with_role),
-    rag: RAGService = Depends(get_rag_service),
-):
-    """Delete a document and all its indexed chunks.
-
-    Only the document owner can delete their documents.
-
-    Args:
-        doc_id (str): Logical document identifier to delete.
-        user_id (str): Authenticated user identifier.
-        rag (RAGService): Injected RAG service handling vector deletion.
-
-    Raises:
-        HTTPException: 503 if the vector store is unavailable.
-    """
-    user_id, _ = current_user
-    logger.info(f"User {user_id} deleting document {doc_id}")
-    try:
-        await rag.delete_document(user_id, doc_id)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))

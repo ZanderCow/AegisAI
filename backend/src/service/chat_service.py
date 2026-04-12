@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 
 from src.schemas.chat_schema import (
     CreateConversationRequest,
+    ConversationListItemResponse,
     HistoricChatDashboardQuery,
     HistoricChatDashboardResponse,
     HistoricChatDashboardSummaryResponse,
@@ -18,6 +19,7 @@ from src.schemas.chat_schema import (
     SecurityAlarmEventResponse,
 )
 from src.repo.conversation_repo import ConversationRepository
+from src.repo.document_repo import DocumentRepository
 from src.repo.flagged_event_repo import FlaggedEventRepository
 from src.models.conversation_model import Conversation
 from src.providers import stream_from_provider, validate_provider
@@ -45,6 +47,7 @@ class ChatService:
         repo: ConversationRepository,
         rag: RAGService,
         flagged_event_repo: FlaggedEventRepository,
+        doc_repo: DocumentRepository | None = None,
     ) -> None:
         """Initialize the chat service.
 
@@ -55,10 +58,13 @@ class ChatService:
                 context assembly for chat prompts.
             flagged_event_repo (FlaggedEventRepository): Repository for logging
                 moderation-flagged events.
+            doc_repo (DocumentRepository): Repository used to resolve which
+                documents the requesting user's role may access for RAG.
         """
         self.repo = repo
         self.rag = rag
         self.flagged_event_repo = flagged_event_repo
+        self.doc_repo = doc_repo
 
     async def create_conversation(
         self, user_id: str, request: CreateConversationRequest
@@ -133,8 +139,53 @@ class ChatService:
         messages = await self.repo.get_messages(convo.id)
         return [{"role": m.role, "content": m.content} for m in messages]
 
+    async def list_conversations(self, user_id: str) -> list[ConversationListItemResponse]:
+        """Return sidebar-ready conversation summaries for the authenticated user.
+
+        Args:
+            user_id (str): The UUID string of the requesting user.
+
+        Returns:
+            list[ConversationListItemResponse]: Conversation summaries ordered
+            by most recent activity first.
+        """
+        rows = await self.repo.list_conversations(user_id)
+        return [
+            ConversationListItemResponse(
+                id=str(row["id"]),
+                title=str(row["title"]),
+                provider=str(row["provider"]),
+                model=str(row["model"]),
+                last_message=(
+                    None if row["last_message"] is None else str(row["last_message"])
+                ),
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+                message_count=int(row["message_count"]),
+            )
+            for row in rows
+        ]
+
+    async def delete_conversation(self, conversation_id: str, user_id: str) -> None:
+        """Delete a conversation owned by the authenticated user.
+
+        Args:
+            conversation_id (str): The UUID string of the conversation to remove.
+            user_id (str): The UUID string of the requesting user.
+
+        Raises:
+            HTTPException: 404 if the conversation is missing or not owned by the user.
+        """
+        deleted = await self.repo.delete_conversation(conversation_id, user_id)
+        if not deleted:
+            logger.warning(f"Conversation {conversation_id} not found for delete by user {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+
     async def stream_response(
-        self, convo: Conversation, content: str
+        self, convo: Conversation, content: str, role: str = "user"
     ) -> AsyncIterator[str]:
         """Prepare and return a response stream for a chat message.
 
@@ -151,6 +202,7 @@ class ChatService:
         Args:
             convo (Conversation): The verified conversation model.
             content (str): The user's message content.
+            role (str): The authenticated user's role for RAG document filtering.
 
         Returns:
             AsyncIterator[str]: Text chunks from the provider's streaming
@@ -179,8 +231,12 @@ class ChatService:
         all_messages = await self.repo.get_messages(convo.id)
         messages_payload = [{"role": m.role, "content": m.content} for m in all_messages]
 
-        # Inject RAG context as a leading system message if relevant documents exist
-        rag_context = await self.rag.get_context(str(convo.user_id), content)
+        # Inject RAG context — resolve allowed doc IDs from Postgres then query ChromaDB
+        allowed_doc_ids: list[str] = []
+        if self.doc_repo is not None:
+            allowed_docs = await self.doc_repo.list_by_role(role)
+            allowed_doc_ids = [str(d.chroma_doc_id) for d in allowed_docs if d.chroma_doc_id]
+        rag_context = await self.rag.get_context(allowed_doc_ids, content)
         if rag_context:
             system_msg = {
                 "role": "system",

@@ -11,7 +11,7 @@ COPY pyproject.toml uv.lock ./
 # Stage 2: Development environment
 FROM base AS development
 # Install all dependencies including dev dependencies
-RUN uv sync --locked --all-extras
+RUN uv sync --all-extras
 # Copy the rest of the application
 COPY . .
 # Expose the port

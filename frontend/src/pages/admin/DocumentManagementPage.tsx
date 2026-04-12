@@ -15,21 +15,28 @@ export function DocumentManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    documentService.getAll().then(data => {
+  const load = async () => {
+    try {
+      const data = await documentService.getAll();
       setDocuments(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
       setIsLoading(false);
-    });
-  }, []);
+    }
+  };
 
-  const handleUpload = async (data: { title: string; description: string; fileName: string; allowedRoles: UserRole[] }) => {
-    const newDoc = await documentService.create({
-      ...data,
-      fileSize: Math.floor(Math.random() * 5_000_000) + 100_000,
-      status: 'processing',
-      uploadedBy: 'u1',
-    });
+  useEffect(() => { load(); }, []);
+
+  const handleUpload = async (data: {
+    file: File;
+    title: string;
+    description: string;
+    allowedRoles: UserRole[];
+  }) => {
+    const newDoc = await documentService.upload(data.file, data.title, data.description, data.allowedRoles);
     setDocuments(prev => [...prev, newDoc]);
     setIsModalOpen(false);
   };
@@ -78,6 +85,10 @@ export function DocumentManagementPage() {
         <h1 className="text-2xl font-bold text-gray-100">Document Management</h1>
         <Button onClick={() => setIsModalOpen(true)}>Upload Document</Button>
       </div>
+
+      {error && (
+        <div className="px-4 py-3 rounded-lg bg-red-900/30 border border-red-800 text-red-300 text-sm">{error}</div>
+      )}
 
       <Card padding={false}>
         <div className="p-4 border-b border-gray-800">

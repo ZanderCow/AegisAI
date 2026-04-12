@@ -55,13 +55,6 @@ class Settings(BaseSettings):
             "comma-separated string or JSON array."
         ),
     )
-    AUTO_CREATE_TABLES: bool | None = Field(
-        default=None,
-        description=(
-            "When true, create SQL tables automatically on application startup. "
-            "Defaults to enabled outside production and disabled in production."
-        ),
-    )
     GROQ_API_KEY: str = Field(default="", description="Groq API key for LLM access.")
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key for LLM access.")
     DEEPSEEK_API_KEY: str = Field(default="", description="DeepSeek API key for LLM access.")
@@ -137,15 +130,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def apply_environment_defaults(self) -> "Settings":
-        """Apply environment-aware defaults after base field parsing.
-
-        Production should not mutate schema automatically during startup.
-        Development and testing keep the current convenient bootstrap behavior
-        unless explicitly overridden with ``AUTO_CREATE_TABLES``.
-        """
-        if self.AUTO_CREATE_TABLES is None:
-            self.AUTO_CREATE_TABLES = self.ENVIRONMENT.lower() != "production"
-
         if self.MFA_ENABLED:
             missing = [
                 name for name, value in {

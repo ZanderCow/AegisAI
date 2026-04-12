@@ -22,6 +22,19 @@ class ConversationResponse(BaseModel):
     conversation_id: str = Field(description="The UUID of the newly created conversation.")
 
 
+class ConversationListItemResponse(BaseModel):
+    """Schema representing a summary of a conversation for the sidebar list."""
+
+    id: str = Field(description="The UUID of the conversation.")
+    title: str = Field(description="The human-readable title.")
+    provider: str = Field(description="The AI provider (groq, gemini, deepseek).")
+    model: str = Field(description="The locked model name.")
+    last_message: str | None = Field(default=None, description="Preview of the most recent message content.")
+    created_at: datetime = Field(description="Timestamp of creation.")
+    updated_at: datetime = Field(description="Timestamp of the most recent activity in the conversation.")
+    message_count: int = Field(default=0, description="Number of persisted messages in the conversation.")
+
+
 class SendMessageRequest(BaseModel):
     """Schema for sending a message into a conversation."""
 

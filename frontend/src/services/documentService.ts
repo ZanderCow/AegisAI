@@ -1,141 +1,125 @@
 /**
- * Provides mock document CRUD operations for the frontend.
+ * Real API client for the /api/v1/documents endpoints.
  *
- * The service simulates API latency with in-memory data so the UI can be built
- * and tested before the backend integration is complete.
+ * Replaces the previous in-memory mock. All operations hit the backend and
+ * are subject to role-based access control enforced server-side.
  */
 import type { Document, UserRole } from '@/types';
-import { mockDocuments } from '@/mock';
 
-/**
- * Input required to create a new document record.
- *
- * The service generates the identifier and timestamp fields automatically.
- */
-export type DocumentCreateInput = Omit<Document, 'id' | 'uploadedAt' | 'updatedAt'>;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-/**
- * Contract for the mock document service consumed by document management views.
- */
-export interface DocumentService {
-  /**
-   * Returns every document currently stored in memory.
-   *
-   * @returns A cloned list of all documents.
-   */
-  getAll(): Promise<Document[]>;
-
-  /**
-   * Returns the documents accessible to the provided user role.
-   *
-   * @param role - The role used to filter document access.
-   * @returns A cloned list of documents the role is allowed to view.
-   */
-  getByRole(role: UserRole): Promise<Document[]>;
-
-  /**
-   * Creates a new document record in the in-memory store.
-   *
-   * @param doc - The document fields supplied by the caller.
-   * @returns The newly created document with generated metadata.
-   */
-  create(doc: DocumentCreateInput): Promise<Document>;
-
-  /**
-   * Updates an existing document and refreshes its timestamp.
-   *
-   * @param id - The unique document identifier.
-   * @param updates - The partial document fields to merge into the stored record.
-   * @returns The updated document.
-   * @throws Error When the requested document cannot be found.
-   */
-  update(id: string, updates: Partial<Document>): Promise<Document>;
-
-  /**
-   * Removes a document from the in-memory store.
-   *
-   * @param id - The unique document identifier.
-   * @returns A promise that resolves after the document is removed.
-   */
-  remove(id: string): Promise<void>;
+function getToken(): string {
+  return localStorage.getItem('aegis_token') || '';
 }
 
-/**
- * Waits for the supplied duration to emulate API latency.
- *
- * @param ms - The number of milliseconds to pause before resolving.
- * @returns A promise that resolves after the delay elapses.
- */
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(resolve, ms);
-  });
+function authHeaders(): Record<string, string> {
+  return { Authorization: `Bearer ${getToken()}` };
 }
 
-/**
- * Creates a defensive copy of a document record.
- *
- * @param document - The document to clone.
- * @returns A shallow clone of the provided document.
- */
-function cloneDocument(document: Document): Document {
-  return { ...document };
+async function parseError(res: Response): Promise<string> {
+  try {
+    const data = await res.json();
+    return data.detail || 'An error occurred';
+  } catch {
+    return 'An error occurred';
+  }
 }
 
-/**
- * Creates defensive copies of a list of document records.
- *
- * @param source - The documents to clone.
- * @returns A cloned list that is safe to return to callers.
- */
-function cloneDocuments(source: Document[]): Document[] {
-  return source.map(cloneDocument);
+/** Shape returned by GET /api/v1/documents */
+interface ApiDocument {
+  id: string;
+  title: string;
+  description: string;
+  filename: string;
+  file_size: number;
+  status: string;
+  uploaded_by: string;
+  allowed_roles: string[];
+  chroma_doc_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-/**
- * Generates an ISO-8601 timestamp for new or updated records.
- *
- * @returns The current timestamp in ISO string format.
- */
-function nowIsoString(): string {
-  return new Date().toISOString();
+function mapDoc(d: ApiDocument): Document {
+  return {
+    id: d.id,
+    title: d.title,
+    description: d.description,
+    fileName: d.filename,
+    fileSize: d.file_size,
+    status: d.status as Document['status'],
+    uploadedBy: d.uploaded_by,
+    allowedRoles: d.allowed_roles as Document['allowedRoles'],
+    uploadedAt: d.created_at,
+    updatedAt: d.updated_at,
+  };
 }
 
-let documents: Document[] = cloneDocuments(mockDocuments);
-
-export const documentService: DocumentService = {
+export const documentService = {
+  /** List documents accessible to the current user's role. */
   async getAll(): Promise<Document[]> {
-    await delay(400);
-    return cloneDocuments(documents);
+    const res = await fetch(`${API_URL}/api/v1/documents`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await parseError(res));
+    const data: ApiDocument[] = await res.json();
+    return data.map(mapDoc);
   },
 
-  async getByRole(role: UserRole): Promise<Document[]> {
-    await delay(400);
-    return cloneDocuments(documents.filter(document => document.allowedRoles.includes(role)));
+  /**
+   * Upload a PDF and assign roles. Admin only.
+   * @param file - The PDF file to upload.
+   * @param title - Display title.
+   * @param description - Optional description.
+   * @param allowedRoles - Roles that may access this document.
+   */
+  async upload(
+    file: File,
+    title: string,
+    description: string,
+    allowedRoles: UserRole[],
+  ): Promise<Document> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('title', title);
+    form.append('description', description);
+    form.append('allowed_roles', allowedRoles.join(','));
+
+    const res = await fetch(`${API_URL}/api/v1/documents`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    });
+    if (!res.ok) throw new Error(await parseError(res));
+    return mapDoc(await res.json());
   },
 
-  async create(doc: DocumentCreateInput): Promise<Document> {
-    await delay(600);
-    const newDoc: Document = {
-      ...doc,
-      id: `d${Date.now()}`,
-      uploadedAt: nowIsoString(),
-      updatedAt: nowIsoString(),
-    };
-    documents.push(newDoc);
-    return cloneDocument(newDoc);
+  /** Update document metadata or role assignments. Admin only. */
+  async update(
+    id: string,
+    updates: { title?: string; description?: string; allowedRoles?: UserRole[]; status?: string },
+  ): Promise<Document> {
+    const body: Record<string, unknown> = {};
+    if (updates.title !== undefined) body.title = updates.title;
+    if (updates.description !== undefined) body.description = updates.description;
+    if (updates.allowedRoles !== undefined) body.allowed_roles = updates.allowedRoles;
+    if (updates.status !== undefined) body.status = updates.status;
+
+    const res = await fetch(`${API_URL}/api/v1/documents/${id}`, {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await parseError(res));
+    return mapDoc(await res.json());
   },
 
-  async update(id: string, updates: Partial<Document>): Promise<Document> {
-    await delay(500);
-    const index = documents.findIndex(document => document.id === id);
-    if (index === -1) throw new Error('Document not found');
-    documents[index] = { ...documents[index], ...updates, updatedAt: nowIsoString() };
-    return cloneDocument(documents[index]);
-  },
-
+  /** Delete a document and its vector chunks. Admin only. */
   async remove(id: string): Promise<void> {
-    await delay(400);
-    documents = documents.filter(document => document.id !== id);
+    const res = await fetch(`${API_URL}/api/v1/documents/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await parseError(res));
   },
 };

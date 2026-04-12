@@ -16,9 +16,7 @@ from sqlalchemy.pool import NullPool
 from src.main import app
 from src.core.config import settings
 from src.core.database import get_db
-from src.models.user_model import Base
-import src.models.conversation_model  # noqa: F401 — registers Conversation+Message with Base
-import src.models.flagged_event_model  # noqa: F401 — registers Alarm with Base
+from src.models.registry import Base
 
 TEST_DATABASE_URL = settings.DATABASE_URL
 

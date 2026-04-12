@@ -197,6 +197,7 @@ export async function createStandardUser(
     data: {
       email: credentials.email,
       password: credentials.password,
+      role: credentials.role,
     },
   });
 

@@ -1,9 +1,9 @@
 /**
  * End-to-end coverage for the security-only historic chat and flagging dashboards.
  *
- * These tests exercise the full user-to-security workflow so we verify both
- * route protection and the cross-user moderation visibility expected by the
- * live security dashboards.
+ * Test Flow:
+ * 1. Audit: Standard user sends messages -> Security user audits logs -> Assert content parity.
+ * 2. Flags: User sends "harmful" query -> Verify UI warning -> Security user verifies alarm in dashboard.
  */
 import { randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';

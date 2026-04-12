@@ -1,222 +1,187 @@
 /**
- * End-to-end coverage for document indexing and grounded chat retrieval.
+ * End-to-end coverage for admin-managed RAG document ingestion and retrieval.
  *
- * The suite creates a tiny PDF fixture on the fly, uploads it through the RAG
- * UI, and then verifies that a chat conversation can retrieve the known secret
- * from the indexed document.
+ * Test Flow:
+ * 1. Admin Ingestion: Login as admin -> Upload PDFs -> Assert successful upload.
+ * 2. User Visibility: Login as standard user -> Verify PDF titles appear in /documents.
+ * 3. Grounded Retrieval: Start chat -> Ask factual questions -> Assert response contains PDF data.
  */
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
-import { attachPageDebugLogging, createAndLoginUser } from './helpers/auth';
+import { expect, test, type Page } from '@playwright/test';
+import path from 'path';
+import {
+  attachPageDebugLogging,
+  createStandardUser,
+  loginAsSeededRole,
+  loginWithCredentials,
+  logoutFromApp,
+  type TestCredentials,
+} from './helpers/auth';
+import {
+  createConversation,
+  latestAssistantMessageContent,
+  sendMessageWithButton,
+  type ProviderName,
+} from './helpers/chat';
 
-const PDF_FILENAME = 'aegis-rag-reference.pdf';
-const PDF_SECRET = 'AEGIS-2026-SECURE';
-const PDF_TEXT = `Aegis handbook: The office Wi-Fi password is ${PDF_SECRET}.`;
-const QUESTION = 'According to the uploaded document, reply with only the exact office Wi-Fi password.';
+interface ProviderConfig {
+  id: ProviderName;
+  model: string;
+}
 
-/** Maps provider ids to their user-facing labels in the new-conversation modal. */
-const PROVIDER_LABELS = {
-    groq: 'Groq',
-    gemini: 'Gemini',
-    deepseek: 'DeepSeek',
-} as const;
+interface RagAsset {
+  filePath: string;
+  title: string;
+  description: string;
+  prompt: string;
+  assertions: RegExp[];
+}
 
-/** Mirrors the frontend defaults so the test can assert provider-driven model changes. */
-const DEFAULT_MODELS = {
-    groq: 'llama-3.1-8b-instant',
-    gemini: 'gemini-2.5-flash',
-    deepseek: 'deepseek-chat',
-} as const;
+const FILES_DIR = path.resolve(__dirname, 'files');
 
-type ProviderName = keyof typeof PROVIDER_LABELS;
+const DEFAULT_MODELS: Record<ProviderName, string> = {
+  groq: 'llama-3.1-8b-instant',
+  gemini: 'gemini-2.5-flash',
+  deepseek: 'deepseek-chat',
+};
 
-/**
- * Reports whether the selected provider has the API key needed for a live RAG run.
- *
- * @param provider - Provider id requested by the test configuration.
- * @returns True when the matching provider API key is present in the environment.
- */
+const RAG_ASSETS: RagAsset[] = [
+  {
+    filePath: path.join(FILES_DIR, 'employee_handbook.pdf'),
+    title: 'Employee Handbook',
+    description: 'RAG E2E asset: employee handbook',
+    prompt: 'According to the uploaded employee handbook, what is the maximum PTO carryover per calendar year? Reply with just the number of hours.',
+    assertions: [/40/i, /hour/i],
+  },
+  {
+    filePath: path.join(FILES_DIR, 'incident-num-2031.pdf'),
+    title: 'Incident 2031',
+    description: 'RAG E2E asset: incident report',
+    prompt: 'According to incident #2031, which endpoint exposed the DB connection string? Reply with just the endpoint path.',
+    assertions: [/\/debug\/vars/i],
+  },
+  {
+    filePath: path.join(FILES_DIR, 'payroll.pdf'),
+    title: 'Payroll Register',
+    description: 'RAG E2E asset: payroll register',
+    prompt: 'According to the uploaded payroll register, what was the total gross pay for the pay period? Reply with just the dollar amount.',
+    assertions: [/\$?38,?080(?:\.00)?/i],
+  },
+];
+
 function providerHasKey(provider: ProviderName): boolean {
-    const envByProvider = {
-        groq: process.env.GROQ_API_KEY,
-        gemini: process.env.GEMINI_API_KEY,
-        deepseek: process.env.DEEPSEEK_API_KEY,
-    } as const;
+  const envByProvider = {
+    groq: process.env.GROQ_API_KEY,
+    gemini: process.env.GEMINI_API_KEY,
+    deepseek: process.env.DEEPSEEK_API_KEY,
+  } as const;
 
-    return !!envByProvider[provider];
+  return !!envByProvider[provider];
 }
 
-/**
- * Resolves the provider and model used for the RAG E2E scenario.
- *
- * The test honors explicit `E2E_PROVIDER` and `E2E_MODEL` overrides first.
- * When no override is provided, it selects the first provider that has a
- * configured API key so local and CI environments can share the same suite.
- *
- * @returns The provider configuration to use, or `null` when no live provider is configured.
- * @throws Error When `E2E_PROVIDER` names an unsupported provider or lacks its required API key.
- */
-function getProviderConfig():
-    | { id: ProviderName; label: string; model: string }
-    | null {
-    const requestedProvider = process.env.E2E_PROVIDER?.trim().toLowerCase() as ProviderName | undefined;
-    const requestedModel = process.env.E2E_MODEL?.trim();
+function getProviderConfig(): ProviderConfig {
+  const requestedProvider = process.env.E2E_PROVIDER?.trim().toLowerCase() as ProviderName | undefined;
+  const requestedModel = process.env.E2E_MODEL?.trim();
 
-    if (requestedProvider) {
-        if (!(requestedProvider in PROVIDER_LABELS)) {
-            throw new Error(`Unsupported E2E_PROVIDER "${requestedProvider}".`);
-        }
-        if (!providerHasKey(requestedProvider)) {
-            throw new Error(`E2E_PROVIDER="${requestedProvider}" requires its matching API key env var.`);
-        }
-
-        return {
-            id: requestedProvider,
-            label: PROVIDER_LABELS[requestedProvider],
-            model: requestedModel || DEFAULT_MODELS[requestedProvider],
-        };
+  if (requestedProvider) {
+    if (!(requestedProvider in DEFAULT_MODELS)) {
+      throw new Error(`Unsupported E2E_PROVIDER "${requestedProvider}". Expected one of: ${Object.keys(DEFAULT_MODELS).join(', ')}.`);
+    }
+    if (!providerHasKey(requestedProvider)) {
+      throw new Error(`E2E_PROVIDER="${requestedProvider}" requires its matching API key environment variable.`);
     }
 
-    for (const provider of Object.keys(PROVIDER_LABELS) as ProviderName[]) {
-        if (!providerHasKey(provider)) continue;
-        return {
-            id: provider,
-            label: PROVIDER_LABELS[provider],
-            model: DEFAULT_MODELS[provider],
-        };
+    return {
+      id: requestedProvider,
+      model: requestedModel || DEFAULT_MODELS[requestedProvider],
+    };
+  }
+
+  for (const provider of Object.keys(DEFAULT_MODELS) as ProviderName[]) {
+    if (!providerHasKey(provider)) {
+      continue;
     }
 
-    return null;
+    return {
+      id: provider,
+      model: requestedModel || DEFAULT_MODELS[provider],
+    };
+  }
+
+  throw new Error(
+    'RAG E2E requires a live provider. Set E2E_PROVIDER plus its API key, or provide one of GROQ_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY.',
+  );
 }
 
-/**
- * Escapes PDF content stream characters that would otherwise break the fixture.
- *
- * @param text - Plain text injected into the generated PDF.
- * @returns Text escaped for use inside a literal PDF string.
- */
-function escapePdfText(text: string): string {
-    return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+async function uploadDocumentFromAdmin(page: Page, asset: RagAsset): Promise<void> {
+  await page.getByRole('button', { name: 'Upload Document' }).click();
+  await expect(page.getByRole('heading', { name: 'Upload Document' })).toBeVisible();
+  const uploadForm = page.locator('form').filter({ has: page.getByLabel('Document Title') });
+
+  const uploadResponsePromise = page.waitForResponse(
+    response =>
+      response.url().includes('/api/v1/documents')
+      && response.request().method() === 'POST',
+  );
+
+  await uploadForm.locator('input[type="file"]').setInputFiles(asset.filePath);
+  await uploadForm.getByLabel('Document Title').fill(asset.title);
+  await uploadForm.getByLabel('Description').fill(asset.description);
+  await uploadForm.getByRole('button', { name: 'User', exact: true }).click();
+  await uploadForm.getByRole('button', { name: 'Upload', exact: true }).click();
+
+  const uploadResponse = await uploadResponsePromise;
+  expect(uploadResponse.ok()).toBeTruthy();
+
+  await expect(page.getByRole('heading', { name: 'Upload Document' })).not.toBeVisible();
+  await expect(page.getByText(asset.title, { exact: true })).toBeVisible({ timeout: 120_000 });
 }
 
-/**
- * Builds a minimal single-page PDF that contains the provided text.
- *
- * The fixture is intentionally tiny so the test controls the indexed content
- * without depending on checked-in binary assets.
- *
- * @param text - Text content rendered onto the single PDF page.
- * @returns A PDF buffer ready to upload through the documents page.
- */
-function buildPdfBuffer(text: string): Buffer {
-    const stream = `BT\n/F1 18 Tf\n72 120 Td\n(${escapePdfText(text)}) Tj\nET\n`;
-    const objects = [
-        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-        '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-        '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
-        `4 0 obj\n<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}endstream\nendobj\n`,
-        '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
-    ];
+async function verifyGroundedReply(page: Page, asset: RagAsset, provider: ProviderConfig): Promise<void> {
+  const conversationTitle = `RAG ${asset.title}`;
 
-    let pdf = '%PDF-1.4\n';
-    const offsets: number[] = [0];
-    for (const object of objects) {
-        offsets.push(Buffer.byteLength(pdf, 'latin1'));
-        pdf += object;
-    }
+  await createConversation(page, conversationTitle, provider.id, provider.model);
+  await sendMessageWithButton(page, asset.prompt, 120_000);
 
-    const xrefStart = Buffer.byteLength(pdf, 'latin1');
-    pdf += `xref\n0 ${objects.length + 1}\n`;
-    pdf += '0000000000 65535 f \n';
-    for (const offset of offsets.slice(1)) {
-        pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`;
-    }
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
-
-    return Buffer.from(pdf, 'latin1');
-}
-
-/**
- * Writes the generated PDF fixture to the current test's output directory.
- *
- * @param path - Absolute file path where the PDF should be created.
- */
-function createPdfFixture(path: string): void {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, buildPdfBuffer(PDF_TEXT));
+  const assistantReply = latestAssistantMessageContent(page);
+  await expect(assistantReply).toBeVisible({ timeout: 120_000 });
+  for (const assertion of asset.assertions) {
+    await expect(assistantReply).toContainText(assertion, { timeout: 120_000 });
+  }
 }
 
 test.beforeEach(({ page }) => {
-    // Mirror browser console output in the terminal for easier CI debugging.
-    attachPageDebugLogging(page);
+  attachPageDebugLogging(page);
 });
 
 test.describe('RAG document upload and chat retrieval', () => {
-    test('uploads a PDF and answers from the indexed document in chat', async ({ page, request }, testInfo) => {
-        test.setTimeout(180_000);
-        const provider = getProviderConfig();
-        if (!provider) {
-            test.skip(true, 'RAG E2E requires GROQ_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY.');
-            return;
-        }
+  test('uploads real PDFs through admin UI and retrieves grounded answers in chat', async ({ page, request }) => {
+    test.setTimeout(300_000);
 
-        const pdfPath = testInfo.outputPath(PDF_FILENAME);
-        createPdfFixture(pdfPath);
+    const provider = getProviderConfig();
+    const standardUser: TestCredentials = await createStandardUser(request, 'rag');
 
-        await createAndLoginUser(page, request, 'rag');
+    await loginAsSeededRole(page, 'admin');
+    await page.goto('/admin/documents');
+    await expect(page.getByRole('heading', { name: 'Document Management' })).toBeVisible();
 
-        // Use a separate chat tab so we verify retrieval from a fresh conversation
-        // while the original page stays focused on document upload progress.
-        const chatPage = await page.context().newPage();
-        chatPage.on('console', msg => console.log('CHAT TAB:', msg.text()));
-        chatPage.on('pageerror', err => console.log('CHAT TAB ERROR:', err.message));
-        await chatPage.goto('/chat');
-        await expect(chatPage).toHaveURL(/\/chat/);
+    for (const asset of RAG_ASSETS) {
+      await uploadDocumentFromAdmin(page, asset);
+    }
 
-        await page.goto('/documents');
-        await expect(page.getByRole('heading', { name: 'RAG Documents' })).toBeVisible();
+    await logoutFromApp(page);
+    await loginWithCredentials(page, standardUser);
 
-        const uploadResponsePromise = page.waitForResponse(
-            response =>
-                response.url().includes('/api/v1/rag/documents')
-                && response.request().method() === 'POST',
-        );
-        await page.locator('input[type="file"]').setInputFiles(pdfPath);
-        const uploadResponse = await uploadResponsePromise;
-        expect(uploadResponse.ok()).toBeTruthy();
+    await page.goto('/documents');
+    await expect(page.getByRole('heading', { name: 'RAG Documents' })).toBeVisible();
+    for (const asset of RAG_ASSETS) {
+      await expect(page.getByText(asset.title, { exact: true })).toBeVisible({ timeout: 120_000 });
+    }
 
-        await expect(page.getByText(new RegExp(`"${PDF_FILENAME}" indexed successfully`, 'i'))).toBeVisible({
-            timeout: 120_000,
-        });
-        await expect(page.getByText(PDF_FILENAME, { exact: true })).toBeVisible();
+    await page.goto('/chat');
+    await expect(page).toHaveURL(/\/chat$/);
 
-        await chatPage.bringToFront();
-        await chatPage.getByRole('button', { name: '+ New Conversation' }).click();
-        if (provider.id !== 'groq') {
-            await chatPage.locator('select').selectOption(provider.id);
-        }
-        await expect(chatPage.getByLabel('Model')).toHaveValue(DEFAULT_MODELS[provider.id]);
-        if (provider.model !== DEFAULT_MODELS[provider.id]) {
-            await chatPage.getByLabel('Model').fill(provider.model);
-        }
-        await chatPage.getByLabel('Title (optional)').fill('RAG E2E Conversation');
-        await chatPage.getByRole('button', { name: 'Create' }).click();
-
-        await expect(chatPage.getByRole('heading', { name: 'RAG E2E Conversation' })).toBeVisible();
-
-        const sendResponsePromise = chatPage.waitForResponse(
-            response =>
-                response.url().includes('/messages/send')
-                && response.request().method() === 'POST',
-        );
-        await chatPage.getByPlaceholder(/Type your message/i).fill(QUESTION);
-        await chatPage.locator('form').getByRole('button').click();
-        const sendResponse = await sendResponsePromise;
-        expect(sendResponse.ok()).toBeTruthy();
-
-        await expect(
-            chatPage.locator('.text-sm.whitespace-pre-wrap.leading-relaxed').filter({ hasText: PDF_SECRET }),
-        ).toBeVisible({ timeout: 90_000 });
-    });
+    for (const asset of RAG_ASSETS) {
+      await verifyGroundedReply(page, asset, provider);
+    }
+  });
 });

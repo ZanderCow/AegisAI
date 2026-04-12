@@ -1,4 +1,4 @@
-import type { User } from '@/types';
+import type { User, UserRole } from '@/types';
 import { API_URL } from '@/config/api';
 
 function decodeJwtUser(token: string): User {
@@ -50,11 +50,15 @@ export const authService = {
     return { token: access_token, user: decodeJwtUser(access_token) };
   },
 
-  async signup(email: string, password: string): Promise<{ token: string; user: User }> {
+  async signup(
+    email: string,
+    password: string,
+    role: UserRole = 'user',
+  ): Promise<{ token: string; user: User }> {
     const res = await fetch(`${API_URL}/api/v1/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, role }),
     });
     if (!res.ok) throw new Error(await parseError(res));
     const { access_token } = await res.json();

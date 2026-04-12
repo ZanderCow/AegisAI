@@ -9,10 +9,10 @@ export function SecurityDocumentsPage() {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    documentService.getAll().then(data => {
-      setDocuments(data);
-      setIsLoading(false);
-    });
+    documentService.getAll()
+      .then(data => setDocuments(data))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   const filtered = documents.filter(d =>

@@ -1,8 +1,9 @@
 /**
  * Covers the seeded-role login flows used throughout the E2E suite.
  *
- * These checks verify that each pre-seeded account lands on the correct
- * post-login route and that invalid credentials stay on the login screen.
+ * Test Flow:
+ * 1. Role Login: Submit credentials (Admin/Security) -> Verify specific dashboard redirects.
+ * 2. Auth Failure: Submit invalid password -> Verify error visibility and page retention.
  */
 import { test, expect } from '@playwright/test';
 import {

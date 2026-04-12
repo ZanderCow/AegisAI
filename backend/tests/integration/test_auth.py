@@ -8,7 +8,7 @@ duplicate registrations and invalid credentials.
 import pytest
 from unittest.mock import MagicMock, patch
 from httpx import AsyncClient
-from src.security.jwt import create_token
+from src.security.jwt import create_token, decode_token
 
 
 @pytest.mark.asyncio
@@ -26,6 +26,24 @@ async def test_successful_signup(client: AsyncClient) -> None:
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
+    payload = decode_token(data["access_token"])
+    assert payload["email"] == "newuser@example.com"
+    assert payload["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_successful_signup_accepts_explicit_user_role(client: AsyncClient) -> None:
+    """Verify explicit user-role signup is accepted and encoded in the JWT."""
+    response = await client.post(
+        "/api/v1/auth/signup",
+        json={"email": "explicituser@example.com", "password": "supersecurepassword", "role": "user"},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    payload = decode_token(data["access_token"])
+    assert payload["email"] == "explicituser@example.com"
+    assert payload["role"] == "user"
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ export type LoginOutcome =
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<LoginOutcome>;
   completeLogin: (token: string) => void;
-  signup: (email: string, password: string) => Promise<User>;
+  signup: (email: string, password: string, role?: UserRole) => Promise<User>;
   logout: () => void;
   hasRole: (roles: UserRole[]) => boolean;
 }
@@ -68,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { mfaRequired: false, user: result.user };
   }, []);
 
-  const signup = useCallback(async (email: string, password: string): Promise<User> => {
-    const { token, user } = await authService.signup(email, password);
+  const signup = useCallback(async (email: string, password: string, role?: UserRole): Promise<User> => {
+    const { token, user } = await authService.signup(email, password, role);
     localStorage.setItem('aegis_token', token);
     setState({ user, isAuthenticated: true, isLoading: false });
     return user;
@@ -80,9 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }, []);
 
-  // When role is not yet provided by the backend, allow all authenticated users through.
   const hasRole = useCallback(
-    (roles: UserRole[]) => !!state.user && (!state.user.role || roles.includes(state.user.role)),
+    (roles: UserRole[]) => !!state.user && !!state.user.role && roles.includes(state.user.role),
     [state.user],
   );
 

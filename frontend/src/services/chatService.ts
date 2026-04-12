@@ -1,6 +1,17 @@
 import type { Conversation, Message } from '@/types';
 import { API_URL } from '@/config/api';
 
+interface ConversationListItemApi {
+  id: string;
+  title: string;
+  provider: string;
+  model: string;
+  last_message: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
 function getToken(): string {
   return localStorage.getItem('aegis_token') || '';
 }
@@ -12,37 +23,44 @@ function authHeaders(): Record<string, string> {
   };
 }
 
-/** Extract the user ID from the JWT subject claim without a library. */
-function getCurrentUserId(): string {
-  const token = getToken();
-  if (!token) return 'anonymous';
+function authOnlyHeaders(): Record<string, string> {
+  return {
+    Authorization: `Bearer ${getToken()}`,
+  };
+}
+
+async function parseError(response: Response, fallback: string): Promise<Error> {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.sub || 'anonymous';
+    const data = await response.json();
+    return new Error(data.detail || fallback);
   } catch {
-    return 'anonymous';
+    return new Error(fallback);
   }
 }
 
-function storageKey(): string {
-  return `aegis_conversations_${getCurrentUserId()}`;
-}
-
-function loadStored(): Conversation[] {
-  try {
-    return JSON.parse(localStorage.getItem(storageKey()) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function saveStored(convos: Conversation[]): void {
-  localStorage.setItem(storageKey(), JSON.stringify(convos));
+function mapConversation(conversation: ConversationListItemApi): Conversation {
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    provider: conversation.provider,
+    model: conversation.model,
+    createdAt: conversation.created_at,
+    lastMessage: conversation.last_message ?? undefined,
+    lastMessageAt: conversation.updated_at,
+    messageCount: conversation.message_count,
+  };
 }
 
 export const chatService = {
-  getConversations(): Conversation[] {
-    return loadStored();
+  async getConversations(): Promise<Conversation[]> {
+    const res = await fetch(`${API_URL}/api/v1/chat/conversations`, {
+      headers: authOnlyHeaders(),
+    });
+    if (!res.ok) {
+      throw await parseError(res, 'Failed to load conversations');
+    }
+    const data: ConversationListItemApi[] = await res.json();
+    return data.map(mapConversation);
   },
 
   async createConversation(title: string, provider: string, model: string): Promise<Conversation> {
@@ -52,21 +70,19 @@ export const chatService = {
       body: JSON.stringify({ title, provider, model }),
     });
     if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.detail || 'Failed to create conversation');
+      throw await parseError(res, 'Failed to create conversation');
     }
     const { conversation_id } = await res.json();
     const now = new Date().toISOString();
-    const conversation: Conversation = {
+    return {
       id: conversation_id,
       title,
       provider,
       model,
       createdAt: now,
       lastMessageAt: now,
+      messageCount: 0,
     };
-    saveStored([conversation, ...loadStored()]);
-    return conversation;
   },
 
   async getMessages(conversationId: string): Promise<Message[]> {
@@ -99,8 +115,7 @@ export const chatService = {
       },
     );
     if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.detail || 'Failed to send message');
+      throw await parseError(res, 'Failed to send message');
     }
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
@@ -122,17 +137,13 @@ export const chatService = {
     }
   },
 
-  deleteConversation(conversationId: string): void {
-    saveStored(loadStored().filter(c => c.id !== conversationId));
-  },
-
-  updateConversationPreview(conversationId: string, lastMessage: string): void {
-    saveStored(
-      loadStored().map(c =>
-        c.id === conversationId
-          ? { ...c, lastMessage: lastMessage.slice(0, 80), lastMessageAt: new Date().toISOString() }
-          : c,
-      ),
-    );
+  async deleteConversation(conversationId: string): Promise<void> {
+    const res = await fetch(`${API_URL}/api/v1/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
+      headers: authOnlyHeaders(),
+    });
+    if (!res.ok) {
+      throw await parseError(res, 'Failed to delete conversation');
+    }
   },
 };

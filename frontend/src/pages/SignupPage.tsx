@@ -79,6 +79,9 @@ export function SignupPage() {
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Repeat your password"
             />
+            <p className="text-sm text-gray-400">
+              New self-service accounts are created with the <span className="font-medium text-gray-200">user</span> role.
+            </p>
             <Button type="submit" isLoading={isLoading} className="w-full">
               Sign Up
             </Button>

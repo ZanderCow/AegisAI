@@ -25,6 +25,11 @@ trap cleanup EXIT
 log_step "Building e2e test images"
 "${COMPOSE_CMD[@]}" build
 
+log_step "Starting shared infrastructure"
+"${COMPOSE_CMD[@]}" up -d db chroma
+
+
+
 log_step "Starting application infrastructure"
 "${COMPOSE_CMD[@]}" up -d backend frontend add-admin-user-to-db add-security-user-to-db
 

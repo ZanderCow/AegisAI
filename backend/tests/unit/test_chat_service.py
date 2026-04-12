@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 import uuid
 
+from fastapi import HTTPException
 import pytest
 
 from src.moderation.exceptions import ContentPolicyError
@@ -26,6 +27,77 @@ def _build_conversation() -> SimpleNamespace:
         provider="groq",
         model="llama-3.3-70b-versatile",
     )
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_maps_sidebar_rows() -> None:
+    """Conversation list rows should be normalized into response models."""
+    user_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    updated_at = created_at + timedelta(minutes=15)
+
+    repo = Mock()
+    repo.list_conversations = AsyncMock(
+        return_value=[
+            {
+                "id": uuid.uuid4(),
+                "title": "Operations Review",
+                "provider": "groq",
+                "model": "llama-3.3-70b-versatile",
+                "last_message": "Latest response",
+                "created_at": created_at,
+                "updated_at": updated_at,
+                "message_count": 4,
+            }
+        ]
+    )
+
+    rag = Mock()
+    flagged_event_repo = Mock()
+    service = ChatService(repo, rag, flagged_event_repo)
+
+    result = await service.list_conversations(user_id)
+
+    assert len(result) == 1
+    assert result[0].title == "Operations Review"
+    assert result[0].last_message == "Latest response"
+    assert result[0].message_count == 4
+    repo.list_conversations.assert_awaited_once_with(user_id)
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_raises_404_when_missing() -> None:
+    """Deleting a missing conversation should surface a 404 to the endpoint layer."""
+    repo = Mock()
+    repo.delete_conversation = AsyncMock(return_value=False)
+
+    rag = Mock()
+    flagged_event_repo = Mock()
+    service = ChatService(repo, rag, flagged_event_repo)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.delete_conversation(str(uuid.uuid4()), str(uuid.uuid4()))
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Conversation not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_delegates_to_repo() -> None:
+    """Successful conversation deletion should delegate to the repository once."""
+    conversation_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+
+    repo = Mock()
+    repo.delete_conversation = AsyncMock(return_value=True)
+
+    rag = Mock()
+    flagged_event_repo = Mock()
+    service = ChatService(repo, rag, flagged_event_repo)
+
+    await service.delete_conversation(conversation_id, user_id)
+
+    repo.delete_conversation.assert_awaited_once_with(conversation_id, user_id)
 
 
 @pytest.mark.asyncio
@@ -91,9 +163,8 @@ async def test_stream_response_safe_message_validates_provider_before_streaming(
         call_order.append("get_messages")
         return [SimpleNamespace(role="user", content=content)]
 
-    async def _get_context(user_id: str, prompt: str) -> None:
+    async def _get_context(_allowed_doc_ids: list, prompt: str) -> None:
         call_order.append("get_context")
-        assert user_id == str(convo.user_id)
         assert prompt == content
         return None
 

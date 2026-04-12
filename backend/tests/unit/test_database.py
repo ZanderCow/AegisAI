@@ -12,6 +12,7 @@ from pytest import MonkeyPatch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.core.database as database
+from src.core.database_urls import to_sync_database_url
 from src.core.config import settings
 
 
@@ -26,6 +27,27 @@ def test_database_session_maker_uses_configured_engine() -> None:
     assert database.async_session_maker.class_ is AsyncSession
     assert database.async_session_maker.kw["bind"] is database.engine
     assert database.async_session_maker.kw["expire_on_commit"] is False
+
+
+def test_to_sync_database_url_converts_asyncpg_urls() -> None:
+    """Verify Alembic-compatible sync URLs are derived from asyncpg URLs."""
+    assert (
+        to_sync_database_url("postgresql+asyncpg://user:pass@localhost:5432/auth_db")
+        == "postgresql+psycopg2://user:pass@localhost:5432/auth_db"
+    )
+
+
+def test_to_sync_database_url_converts_aiosqlite_urls() -> None:
+    """Verify SQLite async driver URLs are normalized for sync tooling."""
+    assert to_sync_database_url("sqlite+aiosqlite:///./app.db") == "sqlite:///./app.db"
+
+
+def test_to_sync_database_url_normalizes_postgres_scheme() -> None:
+    """Verify legacy ``postgres://`` URLs are normalized for migrations."""
+    assert (
+        to_sync_database_url("postgres://user:pass@localhost:5432/auth_db")
+        == "postgresql+psycopg2://user:pass@localhost:5432/auth_db"
+    )
 
 
 @pytest.mark.asyncio

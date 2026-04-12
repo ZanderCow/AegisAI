@@ -31,6 +31,10 @@ To start the development environment in the background, run:
 docker compose -f infra/docker-compose.dev.yml up -d
 ```
 
+The dev stack now runs an explicit Alembic migration step before the backend
+starts. It also bootstraps the deterministic local `admin` and `security`
+accounts as separate one-off jobs after the schema is in place.
+
 For provider-backed chat in the dev stack, set `GROQ_API_KEY`,
 `GEMINI_API_KEY`, and `DEEPSEEK_API_KEY` in `infra/.env` or export them
 in your shell before starting Compose. These AI model API key variables
@@ -90,6 +94,10 @@ To start the E2E environment and watch the test output, run:
 ```bash
 docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit
 ```
+
+Like the dev stack, the E2E stack migrates the database first, then creates
+the deterministic privileged accounts used by Playwright, while ordinary test
+users continue to be created dynamically during each run.
 
 For provider-backed RAG E2E tests, set at least one of `GROQ_API_KEY`,
 `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY` in `infra/.env` or export them

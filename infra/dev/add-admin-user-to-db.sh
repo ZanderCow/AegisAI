@@ -2,32 +2,37 @@
 
 set -euo pipefail
 
-# Wait for the backend container before importing application code to hash
+# Wait for the migrated database before importing application code to hash
 # credentials and seed the admin account.
-echo "Waiting for backend health endpoint..."
+echo "Waiting for database connectivity..."
 python - <<'PY'
-"""Wait for the backend service to report healthy before seeding users."""
+"""Wait for the migrated database to accept connections before seeding."""
 
+import asyncio
 import os
 import sys
-import time
-import urllib.error
-import urllib.request
+import asyncpg
 
-health_url = os.environ.get("BACKEND_HEALTH_URL", "http://backend:8000/health")
 
-for attempt in range(1, 31):
-    try:
-        with urllib.request.urlopen(health_url, timeout=5) as response:
-            if response.status == 200:
-                print("Backend is healthy.")
-                sys.exit(0)
-    except Exception as exc:  # noqa: BLE001 - dev seed script should keep retrying
-        print(f"Health check attempt {attempt}/30 failed: {exc}")
-    time.sleep(2)
+async def main() -> int:
+    raw_database_url = os.environ["DATABASE_URL"]
+    database_url = raw_database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
-print("Backend did not become healthy in time.", file=sys.stderr)
-sys.exit(1)
+    for attempt in range(1, 31):
+        try:
+            conn = await asyncpg.connect(database_url)
+            await conn.close()
+            print("Database is reachable.")
+            return 0
+        except Exception as exc:  # noqa: BLE001 - dev seed script should keep retrying
+            print(f"Database check attempt {attempt}/30 failed: {exc}")
+            await asyncio.sleep(2)
+
+    print("Database did not become reachable in time.", file=sys.stderr)
+    return 1
+
+
+raise SystemExit(asyncio.run(main()))
 PY
 
 # Upsert the deterministic admin user used by local compose and Playwright tests.

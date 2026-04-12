@@ -8,9 +8,7 @@ interface InviteUserFormProps {
 }
 
 const roleOptions = [
-  { value: 'it', label: 'IT Staff' },
-  { value: 'hr', label: 'Human Resources' },
-  { value: 'finance', label: 'Finance' },
+  { value: 'user', label: 'User' },
   { value: 'security', label: 'Security Analyst' },
   { value: 'admin', label: 'Administrator' },
 ];
@@ -18,7 +16,7 @@ const roleOptions = [
 export function InviteUserForm({ onSubmit, onCancel }: InviteUserFormProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<UserRole>('it');
+  const [role, setRole] = useState<UserRole>('user');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {

@@ -28,6 +28,8 @@ log_step "Building test images"
 log_step "Starting test infrastructure"
 "${COMPOSE_CMD[@]}" up -d db chroma
 
+
+
 backend_exit=0
 frontend_exit=0
 

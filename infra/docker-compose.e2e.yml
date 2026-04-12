@@ -8,6 +8,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-auth_db}
     ports:
       - "5432:5432"
+    volumes:
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -51,6 +53,10 @@ services:
         condition: service_healthy
       chroma:
         condition: service_started
+      add-admin-user-to-db:
+        condition: service_completed_successfully
+      add-security-user-to-db:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -78,21 +84,11 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       admin_user_username: "${admin_user_username:-admin@gmail.com}"
       admin_user_password: "${admin_user_password:-AegisAdmin!2026}"
-      BACKEND_HEALTH_URL: ${BACKEND_HEALTH_URL:-http://backend:8000/health}
-    command:
-      [
-        "bash",
-        "-lc",
-        "bash /infra/dev/add-admin-user-to-db.sh && touch /tmp/admin-seeded && tail -f /dev/null",
-      ]
+    command: ["bash", "/infra/dev/add-admin-user-to-db.sh"]
+    restart: "no"
     depends_on:
-      backend:
+      db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/admin-seeded"]
-      interval: 2s
-      timeout: 2s
-      retries: 15
 
   add-security-user-to-db:
     build:
@@ -109,21 +105,11 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       security_username: "${security_username:-security@gmail.com}"
       security_password: "${security_password:-AegisSecurity!2026}"
-      BACKEND_HEALTH_URL: ${BACKEND_HEALTH_URL:-http://backend:8000/health}
-    command:
-      [
-        "bash",
-        "-lc",
-        "bash /infra/dev/add-security-user-to-db.sh && touch /tmp/security-seeded && tail -f /dev/null",
-      ]
+    command: ["bash", "/infra/dev/add-security-user-to-db.sh"]
+    restart: "no"
     depends_on:
-      backend:
+      db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/security-seeded"]
-      interval: 2s
-      timeout: 2s
-      retries: 15
 
   frontend:
     build:
@@ -164,9 +150,9 @@ services:
       backend:
         condition: service_started
       add-admin-user-to-db:
-        condition: service_healthy
+        condition: service_completed_successfully
       add-security-user-to-db:
-        condition: service_healthy
+        condition: service_completed_successfully
     command: ["sh", "-c", "npm ci && echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
 
 volumes:

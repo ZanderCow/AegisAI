@@ -46,7 +46,6 @@ def test_config_loads_defaults(monkeypatch: MonkeyPatch) -> None:
         "http://127.0.0.1:5173",
         "http://frontend:5173",
     ]
-    assert settings.AUTO_CREATE_TABLES is True
     assert settings.MOCK_PROVIDER_RESPONSES is False
     assert settings.CHROMA_HOST == "localhost"
     assert settings.CHROMA_PORT == 8000
@@ -72,7 +71,6 @@ def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
         "CORS_ALLOWED_ORIGINS",
         "https://app.example.com, https://admin.example.com",
     )
-    monkeypatch.delenv("AUTO_CREATE_TABLES", raising=False)
     monkeypatch.setenv("MOCK_PROVIDER_RESPONSES", "true")
     monkeypatch.setenv("CHROMA_HOST", "chroma.internal")
     monkeypatch.setenv("CHROMA_PORT", "8443")
@@ -89,7 +87,6 @@ def test_config_overrides_defaults(monkeypatch: MonkeyPatch) -> None:
         "https://app.example.com",
         "https://admin.example.com",
     ]
-    assert settings.AUTO_CREATE_TABLES is False
     assert settings.MOCK_PROVIDER_RESPONSES is True
     assert settings.CHROMA_HOST == "chroma.internal"
     assert settings.CHROMA_PORT == 8443
@@ -105,18 +102,6 @@ def test_config_normalizes_standard_postgres_url(monkeypatch: MonkeyPatch) -> No
 
     assert settings.DATABASE_URL == "postgresql+asyncpg://user:pass@db.railway.internal:5432/auth_db"
 
-
-def test_config_allows_overriding_auto_create_tables(monkeypatch: MonkeyPatch) -> None:
-    """Tests explicit AUTO_CREATE_TABLES overrides the environment default."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
-    monkeypatch.setenv("SECRET_KEY", "custom_key")
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("AUTO_CREATE_TABLES", "true")
-
-    settings = Settings(_env_file=None)
-
-    assert settings.ENVIRONMENT == "production"
-    assert settings.AUTO_CREATE_TABLES is True
 
 
 def test_config_accepts_json_array_for_cors_allowed_origins(monkeypatch: MonkeyPatch) -> None:

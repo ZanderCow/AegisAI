@@ -4,7 +4,7 @@ This module defines the Conversation and Message models representing
 AI chat sessions and their individual message exchanges.
 """
 import uuid
-from sqlalchemy import Column, String, ForeignKey, Text, DateTime, BigInteger, Integer, Uuid
+from sqlalchemy import Column, String, ForeignKey, Text, DateTime, BigInteger, Identity, Integer, Uuid
 from sqlalchemy.sql import func
 
 from src.models.user_model import Base
@@ -15,7 +15,7 @@ class Conversation(Base):
 
     Attributes:
         id (uuid.UUID): The primary UUID key for the conversation.
-        display_id (int | None): BIGSERIAL display ID (PostgreSQL only; None in SQLite tests).
+        display_id (int): Database-generated display ID used for operator-friendly references.
         title (str): The human-readable title of the conversation.
         user_id (uuid.UUID): Foreign key linking the conversation to its owner.
         provider (str): The AI provider locked at creation (groq, gemini, deepseek).
@@ -28,7 +28,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    display_id = Column(BigInteger, nullable=True)  # BIGSERIAL in PostgreSQL; NULL in SQLite tests
+    display_id = Column(BigInteger, Identity(), unique=True, nullable=False)
     title = Column(String(255), nullable=False, default="New Chat")
     user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
     provider = Column(String(50), nullable=False)
@@ -43,7 +43,7 @@ class Message(Base):
 
     Attributes:
         id (uuid.UUID): The primary UUID key for the message.
-        display_id (int | None): BIGSERIAL display ID (PostgreSQL only; None in SQLite tests).
+        display_id (int): Database-generated display ID used for operator-friendly references.
         conversation_id (uuid.UUID): Foreign key linking the message to its conversation.
         role (str): The speaker role — one of 'user', 'assistant', or 'system'.
         content (str): The full text content of the message.
@@ -54,7 +54,7 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    display_id = Column(BigInteger, nullable=True)  # BIGSERIAL in PostgreSQL; NULL in SQLite tests
+    display_id = Column(BigInteger, Identity(), unique=True, nullable=False)
     conversation_id = Column(Uuid(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)

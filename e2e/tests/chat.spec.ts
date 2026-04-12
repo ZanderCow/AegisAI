@@ -1,8 +1,10 @@
 /**
  * Covers the core chat workspace flows for authenticated users.
  *
- * These scenarios focus on conversation lifecycle behavior in the UI rather
- * than provider-specific response quality, which is handled elsewhere.
+ * Test Flow:
+ * 1. Guards: Verify /chat is protected from unauthenticated users.
+ * 2. Conversations: Create chats -> Select from sidebar -> Verify input UI -> Delete chat.
+ * 3. Messaging: Select provider (Groq/Gemini/DeepSeek) -> Send message -> Verify list update.
  */
 import { test, expect } from '@playwright/test';
 import { attachPageDebugLogging, createAndLoginUser } from './helpers/auth';

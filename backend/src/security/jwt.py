@@ -3,6 +3,7 @@
 This module provides functions for generating secure
 JSON Web Tokens (JWT) for authentication.
 """
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import jwt
@@ -100,14 +101,21 @@ async def get_current_user(
     return user_id
 
 
+@dataclass
+class AuthenticatedUser:
+    """Carries both the user ID and role extracted from a validated JWT."""
+    user_id: str
+    role: str
+
+
 async def get_current_user_with_role(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     db: AsyncSession = Depends(get_db),
-) -> tuple[str, str]:
-    """Extracts the authenticated user's ID and role from a Bearer token.
+) -> AuthenticatedUser:
+    """Extracts user ID and role from a Bearer token.
 
     Returns:
-        tuple[str, str]: (user_id, role) extracted from the JWT payload.
+        AuthenticatedUser: Validated user_id and role from the JWT payload.
 
     Raises:
         HTTPException: 401 if the token is expired, invalid, or the user no longer exists.
@@ -125,11 +133,11 @@ async def get_current_user_with_role(
         logger.warning(f"JWT references non-existent user {user_id}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    return user_id, user.role
+    return AuthenticatedUser(user_id=user_id, role=user.role)
 
 
 async def get_current_security_user(
-    current_user: tuple[str, str] = Depends(get_current_user_with_role),
+    current_user: AuthenticatedUser = Depends(get_current_user_with_role),
 ) -> str:
     """Ensure the authenticated user has the dedicated security role.
 
@@ -139,12 +147,11 @@ async def get_current_security_user(
     Raises:
         HTTPException: 403 when the authenticated user is not a security user.
     """
-    user_id, role = current_user
-    if role != ROLE_SECURITY:
-        logger.warning("User %s attempted to access a security-only endpoint with role %s", user_id, role)
+    if current_user.role != ROLE_SECURITY:
+        logger.warning("User %s attempted to access a security-only endpoint with role %s", current_user.user_id, current_user.role)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Security role required",
         )
 
-    return user_id
+    return current_user.user_id

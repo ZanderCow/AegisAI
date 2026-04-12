@@ -7,7 +7,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 /** Providers supported by the new-conversation modal in E2E tests. */
-type ProviderName = 'groq' | 'gemini' | 'deepseek';
+export type ProviderName = 'groq' | 'gemini' | 'deepseek';
 
 /** Default model values expected after a provider selection changes. */
 const DEFAULT_MODELS: Record<ProviderName, string> = {
@@ -15,6 +15,16 @@ const DEFAULT_MODELS: Record<ProviderName, string> = {
   gemini: 'gemini-2.5-flash',
   deepseek: 'deepseek-chat',
 };
+
+/**
+ * Locates the rendered content node for the latest assistant message.
+ *
+ * @param page - Playwright page used for browser interaction.
+ * @returns The content locator for the newest assistant response bubble.
+ */
+export function latestAssistantMessageContent(page: Page): Locator {
+  return page.locator('[data-message-sender="assistant"] [data-message-content]').last();
+}
 
 /**
  * Locates a conversation list row by its title.

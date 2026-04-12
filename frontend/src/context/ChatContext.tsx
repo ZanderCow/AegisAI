@@ -28,7 +28,7 @@ interface ChatContextType {
   isSending: boolean;
 
   /** Reloads the sidebar conversation list and clears any active selection. */
-  loadConversations: () => void;
+  loadConversations: () => Promise<void>;
 
   /** Selects a conversation and loads its message history. */
   selectConversation: (conversation: Conversation) => Promise<void>;
@@ -40,7 +40,7 @@ interface ChatContextType {
   createConversation: (title: string, provider: string, model: string) => Promise<void>;
 
   /** Deletes a conversation and clears local state when it was currently selected. */
-  deleteConversation: (conversationId: string) => void;
+  deleteConversation: (conversationId: string) => Promise<void>;
 }
 
 /** React context consumed by chat pages, sidebar controls, and message composer UI. */
@@ -77,10 +77,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, []);
 
-  const loadConversations = useCallback(() => {
-    setConversations(chatService.getConversations());
-    setCurrentConversation(null);
-    setMessages([]);
+  const loadConversations = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const conversationList = await chatService.getConversations();
+      setConversations(conversationList);
+      setCurrentConversation(null);
+      setMessages([]);
+    } catch {
+      setConversations([]);
+      setCurrentConversation(null);
+      setMessages([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const selectConversation = useCallback(async (conversation: Conversation) => {
@@ -97,7 +107,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const sendMessage = useCallback(async (content: string) => {
     if (!currentConversation) return;
     setIsSending(true);
-    let assistantContent = '';
 
     const userMsg: Message = {
       id: `user-${Date.now()}`,
@@ -124,7 +133,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
         currentConversation.id,
         content,
         (chunk) => {
-          assistantContent += chunk;
           setMessages(prev =>
             prev.map(m =>
               m.id === assistantMsgId ? { ...m, content: m.content + chunk } : m,
@@ -132,10 +140,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           );
         },
       );
-      if (assistantContent) {
-        chatService.updateConversationPreview(currentConversation.id, assistantContent);
-      }
-      setConversations(chatService.getConversations());
     } catch (err) {
       const errorContent = err instanceof Error ? err.message : 'Something went wrong';
       setMessages(prev =>
@@ -143,6 +147,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
           m.id === assistantMsgId ? { ...m, content: `Error: ${errorContent}` } : m,
         ),
       );
+      setIsSending(false);
+      return;
+    }
+
+    try {
+      const conversationList = await chatService.getConversations();
+      setConversations(conversationList);
+      const refreshedCurrentConversation = conversationList.find(
+        conversation => conversation.id === currentConversation.id,
+      );
+      if (refreshedCurrentConversation) {
+        setCurrentConversation(refreshedCurrentConversation);
+      }
     } finally {
       setIsSending(false);
     }
@@ -152,20 +169,37 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setIsLoading(true);
     try {
       const conversation = await chatService.createConversation(title, provider, model);
-      setConversations(chatService.getConversations());
-      setCurrentConversation(conversation);
+      try {
+        const conversationList = await chatService.getConversations();
+        setConversations(conversationList);
+        setCurrentConversation(
+          conversationList.find(item => item.id === conversation.id) ?? conversation,
+        );
+      } catch {
+        setConversations(prev => [conversation, ...prev.filter(item => item.id !== conversation.id)]);
+        setCurrentConversation(conversation);
+      }
       setMessages([]);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const deleteConversation = useCallback((conversationId: string) => {
-    chatService.deleteConversation(conversationId);
-    setConversations(chatService.getConversations());
-    if (currentConversation?.id === conversationId) {
-      setCurrentConversation(null);
-      setMessages([]);
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    try {
+      await chatService.deleteConversation(conversationId);
+      try {
+        const conversationList = await chatService.getConversations();
+        setConversations(conversationList);
+      } catch {
+        setConversations(prev => prev.filter(conversation => conversation.id !== conversationId));
+      }
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(null);
+        setMessages([]);
+      }
+    } catch {
+      // Keep the current sidebar state when the delete request fails.
     }
   }, [currentConversation]);
 

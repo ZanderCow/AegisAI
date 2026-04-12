@@ -21,6 +21,7 @@ class User(Base):
         id (uuid.UUID): The primary UUID key for the user.
         email (str): The unique, indexed email address used for login.
         hashed_password (str): The heavily salted, securely hashed password.
+        role (str): The user's role (user, admin, security).
     """
     __tablename__ = "users"
 

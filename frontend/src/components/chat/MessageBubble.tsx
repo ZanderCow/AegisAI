@@ -10,7 +10,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.sender === 'user';
 
   return (
-    <div className={clsx('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div
+      className={clsx('flex', isUser ? 'justify-end' : 'justify-start')}
+      data-message-sender={message.sender}
+    >
       <div
         className={clsx(
           'max-w-[80%] rounded-2xl px-4 py-3',
@@ -19,7 +22,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             : 'bg-gray-800 text-gray-100',
         )}
       >
-        <div className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</div>
+        <div className="text-sm whitespace-pre-wrap leading-relaxed" data-message-content>
+          {message.content}
+        </div>
         {message.sources && message.sources.length > 0 && (
           <div className="mt-2 pt-2 border-t border-gray-700/50">
             <p className="text-xs opacity-70 mb-1">Sources:</p>

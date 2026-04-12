@@ -51,8 +51,8 @@ class AuthService:
             )
         
         hashed_pwd = hash_password(request.password)
-        new_user = await self.repo.create_user(request.email, hashed_pwd)
-        
+        new_user = await self.repo.create_user(request.email, hashed_pwd, role=request.role)
+
         logger.info(f"User created successfully: {new_user.id}")
         # 'sub' is the standard subject claim representing the user ID
         token = create_token({"sub": str(new_user.id), "email": new_user.email, "role": new_user.role})

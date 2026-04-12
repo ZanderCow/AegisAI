@@ -1,8 +1,9 @@
 /**
  * Exercises the public signup flow for newly created end users.
  *
- * The suite covers both the happy path and the duplicate-email validation
- * path using one of the deterministic seeded accounts.
+ * Test Flow:
+ * 1. Successful Signup: Navigate to /signup -> Generate unique user -> Submit -> Verify /chat redirect + JWT.
+ * 2. Duplicate Validation: Submit existing admin email -> Verify "Email already registered" error.
  */
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'crypto';
