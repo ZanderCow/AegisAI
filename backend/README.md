@@ -88,6 +88,12 @@ against a fresh or upgraded database. If the connected database is behind the
 current Alembic head revision, application startup now fails fast with a clear
 migration error instead of serving traffic against a stale schema.
 
+The production Docker image wraps API startup with
+`scripts/start-backend.sh`, which runs `scripts/prepare_database.py` before
+launching Uvicorn and binds to `${PORT:-8000}`. Platform deployments such as
+Railway should therefore use the image's default start command unless they
+intentionally override it with an equivalent migration-first command.
+
 ## Database Setup
 
 The database schema is managed by Alembic.

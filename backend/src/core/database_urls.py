@@ -27,9 +27,20 @@ def load_database_url() -> str:
     """Load the database URL without depending on full application settings."""
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        return database_url
+        return normalize_async_database_url(database_url)
 
-    return DatabaseUrlSettings().DATABASE_URL
+    return normalize_async_database_url(DatabaseUrlSettings().DATABASE_URL)
+
+
+def normalize_async_database_url(database_url: str) -> str:
+    """Normalize standard PostgreSQL URLs for async SQLAlchemy usage."""
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    return database_url
 
 
 def to_sync_database_url(database_url: str) -> str:
