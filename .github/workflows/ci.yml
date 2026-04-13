@@ -16,11 +16,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate privileged-user seed secrets
+        env:
+          SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_SECURITY_EMAIL: ${{ secrets.SEED_SECURITY_EMAIL }}
+          SEED_SECURITY_PASSWORD: ${{ secrets.SEED_SECURITY_PASSWORD }}
+        run: |
+          missing=0
+
+          for name in SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD SEED_SECURITY_EMAIL SEED_SECURITY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Ensure compose test runner is executable
         run: chmod +x ./scripts/test-compose.sh
 
       - name: Run compose test suite
         shell: bash
+        env:
+          SEED_HIGHER_TIER_USERS: "true"
+          admin_user_username: ${{ secrets.SEED_ADMIN_EMAIL }}
+          admin_user_password: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          security_username: ${{ secrets.SEED_SECURITY_EMAIL }}
+          security_password: ${{ secrets.SEED_SECURITY_PASSWORD }}
         run: ./scripts/test-compose.sh
 
       - name: Tear down stack
@@ -35,6 +61,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate privileged-user seed secrets
+        env:
+          SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_SECURITY_EMAIL: ${{ secrets.SEED_SECURITY_EMAIL }}
+          SEED_SECURITY_PASSWORD: ${{ secrets.SEED_SECURITY_PASSWORD }}
+        run: |
+          missing=0
+
+          for name in SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD SEED_SECURITY_EMAIL SEED_SECURITY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Validate E2E provider secrets
         env:
@@ -55,6 +101,11 @@ jobs:
 
       - name: Run E2E compose tests
         env:
+          SEED_HIGHER_TIER_USERS: "true"
+          admin_user_username: ${{ secrets.SEED_ADMIN_EMAIL }}
+          admin_user_password: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          security_username: ${{ secrets.SEED_SECURITY_EMAIL }}
+          security_password: ${{ secrets.SEED_SECURITY_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

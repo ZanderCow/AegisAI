@@ -6,10 +6,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-auth_db}
-    ports:
-      - "5432:5432"
-    volumes:
-      - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -54,17 +50,28 @@ services:
       DUO_CLIENT_SECRET: ${DUO_CLIENT_SECRET:-}
       DUO_API_HOST: ${DUO_API_HOST:-}
       DUO_REDIRECT_URI: ${DUO_REDIRECT_URI:-http://localhost:5173/auth/duo/callback}
+      SEED_HIGHER_TIER_USERS: ${SEED_HIGHER_TIER_USERS:-true}
     ports:
       - "8000:8000"
+    command:
+      [
+        "bash",
+        "scripts/start-backend.sh",
+        "uv",
+        "run",
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
     depends_on:
       db:
         condition: service_healthy
       chroma:
         condition: service_started
-      add-admin-user-to-db:
-        condition: service_completed_successfully
-      add-security-user-to-db:
-        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -76,48 +83,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-
-  add-admin-user-to-db:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      target: development
-    volumes:
-      - ../backend:/app
-      - ../infra:/infra:ro
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
-      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      admin_user_username: "${admin_user_username:-admin@gmail.com}"
-      admin_user_password: "${admin_user_password:-AegisAdmin!2026}"
-    command: ["bash", "/infra/dev/add-admin-user-to-db.sh"]
-    restart: "no"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  add-security-user-to-db:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      target: development
-    volumes:
-      - ../backend:/app
-      - ../infra:/infra:ro
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/auth_db
-      SECRET_KEY: test_secret_key_for_e2e_tests_only
-      ALGORITHM: HS256
-      ENVIRONMENT: development
-      security_username: "${security_username:-security@gmail.com}"
-      security_password: "${security_password:-AegisSecurity!2026}"
-    command: ["bash", "/infra/dev/add-security-user-to-db.sh"]
-    restart: "no"
-    depends_on:
-      db:
-        condition: service_healthy
 
   frontend:
     build:

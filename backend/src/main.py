@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 from src.core.config import settings
 from src.core.database import engine
+from src.core.database_migrations import verify_database_schema_current
 from src.api.v1.endpoints import auth
 from src.api.v1.endpoints import chat
 from src.api.v1.endpoints import rag
@@ -30,6 +31,9 @@ async def lifespan(app: FastAPI):
         app (FastAPI): The active FastAPI application instance.
     """
     logger.info("Starting up application, connecting to database...")
+    if settings.ENVIRONMENT.lower() != "test":
+        await verify_database_schema_current(engine, settings.DATABASE_URL)
+        logger.info("Database schema matches the current Alembic head revision.")
     yield
     # Safely dispose engine connections immediately upon application shutdown
     logger.info("Shutting down application, disposing database connections...")

@@ -5,7 +5,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/infra/docker-compose.e2e.yml"
-COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
+ENV_FILE="${REPO_ROOT}/infra/.env"
+COMPOSE_CMD=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+
+export CI="${CI:-true}"
 
 log_step() {
   printf '\n==> %s\n' "$1"
@@ -31,7 +34,7 @@ log_step "Starting shared infrastructure"
 
 
 log_step "Starting application infrastructure"
-"${COMPOSE_CMD[@]}" up -d backend frontend add-admin-user-to-db add-security-user-to-db
+"${COMPOSE_CMD[@]}" up -d backend frontend
 
 e2e_exit=0
 

@@ -6,10 +6,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-auth_db}
-    ports:
-      - "5432:5432"
-    volumes:
-      - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -46,17 +42,29 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       MFA_ENABLED: "false"
-    ports:
-      - "8000:8000"
+      SEED_HIGHER_TIER_USERS: ${SEED_HIGHER_TIER_USERS:-true}
+      admin_user_username: ${admin_user_username}
+      admin_user_password: ${admin_user_password}
+      security_username: ${security_username}
+      security_password: ${security_password}
+    command:
+      [
+        "bash",
+        "scripts/start-backend.sh",
+        "uv",
+        "run",
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
     depends_on:
       db:
         condition: service_healthy
       chroma:
         condition: service_started
-      add-admin-user-to-db:
-        condition: service_completed_successfully
-      add-security-user-to-db:
-        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -69,48 +77,6 @@ services:
       timeout: 5s
       retries: 12
 
-  add-admin-user-to-db:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      target: development
-    volumes:
-      - ../backend:/app
-      - ../infra:/infra:ro
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
-      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      admin_user_username: "${admin_user_username:-admin@gmail.com}"
-      admin_user_password: "${admin_user_password:-AegisAdmin!2026}"
-    command: ["bash", "/infra/dev/add-admin-user-to-db.sh"]
-    restart: "no"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  add-security-user-to-db:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      target: development
-    volumes:
-      - ../backend:/app
-      - ../infra:/infra:ro
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
-      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      security_username: "${security_username:-security@gmail.com}"
-      security_password: "${security_password:-AegisSecurity!2026}"
-    command: ["bash", "/infra/dev/add-security-user-to-db.sh"]
-    restart: "no"
-    depends_on:
-      db:
-        condition: service_healthy
-
   frontend:
     build:
       context: ../frontend
@@ -119,8 +85,6 @@ services:
     environment:
       # Frontend runtime setting used inside the containerized browser flow.
       VITE_API_URL: ${E2E_VITE_API_URL:-http://backend:8000}
-    ports:
-      - "5173:5173"
     depends_on:
       - backend
 
@@ -133,15 +97,15 @@ services:
       # Playwright runner endpoints.
       FRONTEND_URL: ${FRONTEND_URL:-http://frontend:5173}
       BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
-      admin_user_username: "${admin_user_username:-admin@gmail.com}"
-      admin_user_password: "${admin_user_password:-AegisAdmin!2026}"
-      security_username: "${security_username:-security@gmail.com}"
-      security_password: "${security_password:-AegisSecurity!2026}"
-      # Provider credentials forwarded to the E2E runner.
+      admin_user_username: ${admin_user_username}
+      admin_user_password: ${admin_user_password}
+      security_username: ${security_username}
+      security_password: ${security_password}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       # Optional Playwright test selection overrides.
+      CI: ${CI:-}
       E2E_PROVIDER: ${E2E_PROVIDER:-}
       E2E_MODEL: ${E2E_MODEL:-}
     depends_on:
@@ -149,10 +113,6 @@ services:
         condition: service_started
       backend:
         condition: service_started
-      add-admin-user-to-db:
-        condition: service_completed_successfully
-      add-security-user-to-db:
-        condition: service_completed_successfully
     command: ["sh", "-c", "npm ci && echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
 
 volumes:

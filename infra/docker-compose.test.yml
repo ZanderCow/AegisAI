@@ -8,8 +8,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-auth_db}
-    volumes:
-      - ../db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -45,6 +43,11 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      SEED_HIGHER_TIER_USERS: ${SEED_HIGHER_TIER_USERS:-true}
+      admin_user_username: ${admin_user_username:-}
+      admin_user_password: ${admin_user_password:-}
+      security_username: ${security_username:-}
+      security_password: ${security_password:-}
     command: ["uv", "run", "pytest", "tests/"]
     depends_on:
       db:

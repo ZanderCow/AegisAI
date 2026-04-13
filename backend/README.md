@@ -4,7 +4,7 @@ This is a FastAPI-based backend application with built-in JWT authentication,
 SQLAlchemy integration, and a Chroma-backed RAG document store.
 
 ## Prerequisites
-- Python 3.10+
+- Python 3.11+
 - PostgreSQL (or SQLite for local development)
 
 ## Setup Instructions
@@ -74,6 +74,7 @@ CHROMA_COLLECTION_NAME="rag_documents"
 
 To start the FastAPI development server using `uv`:
 ```bash
+uv run alembic upgrade head
 uv run uvicorn src.main:app --reload
 ```
 The API documentation will be available at `http://127.0.0.1:8000/docs`.
@@ -82,18 +83,21 @@ If you want the RAG endpoints to work while running the backend directly on
 your host, make sure a Chroma server is reachable at the `CHROMA_*` endpoint
 you configured above.
 
-For direct local runs, the backend still supports the development fallback of
-creating tables on startup when `AUTO_CREATE_TABLES=true`. Compose-managed
-environments now run Alembic first and override `AUTO_CREATE_TABLES=false` so
-schema changes do not happen inside the API process.
+The backend is schema-passive at runtime. Run Alembic before starting the API
+against a fresh or upgraded database. If the connected database is behind the
+current Alembic head revision, application startup now fails fast with a clear
+migration error instead of serving traffic against a stale schema.
 
 ## Database Setup
 
-The database schema is managed via `db/schema.sql`. When starting the development environment with Docker Compose, the database will automatically initialize from this file if the volume is mounted correctly.
+The database schema is managed by Alembic.
 
-To manually initialize or reset the database:
-1. Connect to your PostgreSQL instance.
-2. Run the contents of `db/schema.sql`.
+Common commands:
+
+```bash
+uv run alembic upgrade head
+uv run alembic downgrade -1
+```
 
 Deterministic admin and security accounts can be created using the provided bootstrap scripts in `infra/dev/`.
 
