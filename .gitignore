@@ -29,3 +29,7 @@ Thumbs.db
 node_modules/
 playwright-report/
 test-results/
+
+# Local compose test log captures
+compose-test-logs.txt
+compose-e2e-logs.txt

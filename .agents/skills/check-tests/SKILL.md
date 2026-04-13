@@ -70,11 +70,12 @@ Important repo detail:
 - The script prints a final summary with both exit codes and then cleans the stack up automatically with `docker compose -f infra/docker-compose.test.yml down --volumes --remove-orphans`
 - If the script fails before either test suite starts, treat that as a Docker or environment failure rather than a test regression
 
-If you need to preserve the full run output, capture the script output directly:
+If you need to preserve the full run output, ask first and prefer a temporary
+file outside the repo root so you do not dirty the working tree:
 
 ```bash
-set -o pipefail
-./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
+tmp_log="$(mktemp -t compose-test.XXXXXX.log)"
+./scripts/test-compose.sh 2>&1 | tee "${tmp_log}"
 ```
 
 For focused troubleshooting after a failure, you may rerun the underlying test containers manually:
@@ -111,11 +112,12 @@ Important repo detail:
 - Like the unit test wrapper, it prints an exact exit code at the end and automatically tears down the stack using `down -v --remove-orphans`.
 - If the script fails before tests start, treat that as an environment or setup failure rather than an E2E regression.
 
-If you need to preserve the full run output, capture the script output directly:
+If you need to preserve the full run output, ask first and prefer a temporary
+file outside the repo root so you do not dirty the working tree:
 
 ```bash
-set -o pipefail
-./scripts/test-compose-e2e.sh 2>&1 | tee compose-e2e-logs.txt
+tmp_log="$(mktemp -t compose-e2e.XXXXXX.log)"
+./scripts/test-compose-e2e.sh 2>&1 | tee "${tmp_log}"
 ```
 
 For focused troubleshooting after a failure, you may rerun the underlying test containers manually:
@@ -166,10 +168,8 @@ When relevant, note that GitHub Actions uses the same compose wrappers by runnin
 
 ```bash
 # For unit/integration tests:
-set -o pipefail
-./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
+./scripts/test-compose.sh
 
 # For E2E tests:
-set -o pipefail
-./scripts/test-compose-e2e.sh 2>&1 | tee compose-e2e-logs.txt
+./scripts/test-compose-e2e.sh
 ```

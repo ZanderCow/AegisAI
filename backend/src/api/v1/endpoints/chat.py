@@ -28,7 +28,6 @@ from src.repo.flagged_event_repo import FlaggedEventRepository
 from src.service.chat_service import ChatService
 from src.service.rag_service import RAGService
 from src.security.jwt import get_current_security_user, get_current_user_with_role, AuthenticatedUser
-from src.providers import validate_provider
 from src.core.logger import get_logger
 
 logger = get_logger("CHAT_API")
@@ -136,10 +135,10 @@ async def send_message(
     """
     logger.info(f"Received send message request for conversation {conversation_id}")
     convo = await service.get_conversation_or_404(conversation_id, auth.user_id)
-    validate_provider(convo.provider)
+    stream = await service.stream_response(convo, request.content, auth.role)
 
     async def event_stream():
-        async for chunk in await service.stream_response(convo, request.content, auth.role):
+        async for chunk in stream:
             yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
         yield f"data: {json.dumps({'content': '', 'done': True})}\n\n"
 

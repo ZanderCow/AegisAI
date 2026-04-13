@@ -21,16 +21,7 @@ jobs:
 
       - name: Run compose test suite
         shell: bash
-        run: |
-          set -o pipefail
-          ./scripts/test-compose.sh 2>&1 | tee compose-test-logs.txt
-
-      - name: Upload Compose logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: compose-test-logs
-          path: compose-test-logs.txt
+        run: ./scripts/test-compose.sh
 
       - name: Tear down stack
         if: always()
@@ -67,16 +58,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: |
-          set -o pipefail
-          ./scripts/test-compose-e2e.sh 2>&1 | tee compose-e2e-logs.txt
-
-      - name: Upload Compose logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: compose-e2e-logs
-          path: compose-e2e-logs.txt
+        run: ./scripts/test-compose-e2e.sh
 
       - name: Tear down stack
         if: always()
