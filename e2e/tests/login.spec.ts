@@ -1,44 +1,46 @@
+/**
+ * Covers the seeded-role login flows used throughout the E2E suite.
+ *
+ * Test Flow:
+ * 1. Role Login: Submit credentials (Admin/Security) -> Verify specific dashboard redirects.
+ * 2. Auth Failure: Submit invalid password -> Verify error visibility and page retention.
+ */
 import { test, expect } from '@playwright/test';
+import {
+  attachPageDebugLogging,
+  getSeededCredentials,
+  loginAsSeededRole,
+  submitLoginForm,
+} from './helpers/auth';
 
 test.beforeEach(({ page }) => {
-    page.on('console', msg => console.log('BROWSER:', msg.text()));
-    page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
+  // Surface browser-side errors in CI output when a login redirect fails.
+  attachPageDebugLogging(page);
 });
 
 test.describe('Login flow', () => {
-    test('successful login', async ({ page }) => {
-        // Navigate to the login page
-        await page.goto('/login');
+  test('admin can log in and is redirected to the admin dashboard', async ({ page }) => {
+    const credentials = await loginAsSeededRole(page, 'admin');
 
-        // Fill the login form
-        await page.locator('input[type="email"]').fill('test_login@example.com');
-        await page.locator('input[type="password"]').fill('password123');
+    await expect(page).toHaveURL(/\/admin\/dashboard$/);
+    await expect(page.getByRole('complementary')).toContainText(credentials.email);
+    await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible();
+  });
 
-        // Submit the form
-        await page.locator('button[type="submit"]').click();
+  test('security can log in and is redirected to the security dashboard', async ({ page }) => {
+    const credentials = await loginAsSeededRole(page, 'security');
 
-        // Verify localStorage has a token set OR wait for URL to change to /chat
-        // Sometimes the backend isn't seeded so we catch the UI response instead
-        try {
-            await page.waitForURL('/chat', { timeout: 3000 });
-            const token = await page.evaluate(() => localStorage.getItem('aegis_token'));
-            expect(token).toBeTruthy();
-        } catch (e) {
-            // Fallback: If no seed data exists, we just verify the network call or UI gracefully handles
-            const errorMsg = page.locator('.bg-red-900\\/30.text-red-400');
-            await expect(errorMsg).toBeVisible();
-        }
-    });
+    await expect(page).toHaveURL(/\/security\/dashboard$/);
+    await expect(page.getByRole('complementary')).toContainText(credentials.email);
+    await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible();
+  });
 
-    test('invalid credentials', async ({ page }) => {
-        await page.goto('/login');
+  test('invalid credentials show an error', async ({ page }) => {
+    const credentials = getSeededCredentials('admin');
 
-        await page.locator('input[type="email"]').fill('invalid_user_abcd_1234@example.com');
-        await page.locator('input[type="password"]').fill('wrongpassword');
-        await page.locator('button[type="submit"]').click();
+    await submitLoginForm(page, credentials.email, `${credentials.password}-wrong`);
 
-        // The backend should return a 401 unauthorized or 404
-        const errorMsg = page.locator('.bg-red-900\\/30.text-red-400');
-        await expect(errorMsg).toBeVisible();
-    });
+    await expect(page.locator('p.text-red-400.bg-red-900\\/30')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+  });
 });

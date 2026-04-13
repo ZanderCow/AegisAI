@@ -7,63 +7,68 @@ import src.main as main
 
 
 @pytest.mark.asyncio
-async def test_lifespan_creates_tables_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify startup bootstraps schema when auto-create is enabled."""
-    conn = Mock()
-    conn.run_sync = AsyncMock(return_value=None)
-
-    engine_context = MagicMock()
-    engine_context.__aenter__ = AsyncMock(return_value=conn)
-    engine_context.__aexit__ = AsyncMock(return_value=None)
-
+async def test_lifespan_manages_engine_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify startup and shutdown routines manage the database engine correctly."""
     fake_engine = Mock()
-    fake_engine.begin.return_value = engine_context
     fake_engine.dispose = AsyncMock(return_value=None)
-
     fake_logger = Mock()
+    fake_verify_database_schema_current = AsyncMock(return_value=None)
 
+    monkeypatch.setattr(main, "engine", fake_engine)
+    monkeypatch.setattr(main, "logger", fake_logger)
+    monkeypatch.setattr(main, "verify_database_schema_current", fake_verify_database_schema_current)
     monkeypatch.setattr(
         main,
         "settings",
-        SimpleNamespace(AUTO_CREATE_TABLES=True, ENVIRONMENT="development"),
+        SimpleNamespace(
+            ENVIRONMENT="development",
+            DATABASE_URL="postgresql+asyncpg://postgres:postgres@db:5432/auth_db",
+            CORS_ALLOWED_ORIGINS=["http://localhost:5173"],
+        ),
     )
-    monkeypatch.setattr(main, "engine", fake_engine)
-    monkeypatch.setattr(main, "logger", fake_logger)
 
+    # Lifespan should log startup, yield, then dispose engine on exit
     async with main.lifespan(main.app):
-        pass
+        fake_logger.info.assert_any_call("Starting up application, connecting to database...")
+        fake_logger.info.assert_any_call("Database schema matches the current Alembic head revision.")
 
-    fake_engine.begin.assert_called_once_with()
-    conn.run_sync.assert_awaited_once_with(main.Base.metadata.create_all)
+    # Verification of shutdown cleanup
+    fake_logger.info.assert_any_call("Shutting down application, disposing database connections...")
+    fake_verify_database_schema_current.assert_awaited_once_with(
+        fake_engine,
+        "postgresql+asyncpg://postgres:postgres@db:5432/auth_db",
+    )
     fake_engine.dispose.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
-async def test_lifespan_skips_table_creation_when_disabled(
+async def test_lifespan_skips_schema_verification_in_test_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify production-style startup skips schema mutation."""
+    """Verify schema revision checks are skipped for the test environment."""
     fake_engine = Mock()
     fake_engine.dispose = AsyncMock(return_value=None)
     fake_logger = Mock()
+    fake_verify_database_schema_current = AsyncMock(return_value=None)
 
+    monkeypatch.setattr(main, "engine", fake_engine)
+    monkeypatch.setattr(main, "logger", fake_logger)
+    monkeypatch.setattr(main, "verify_database_schema_current", fake_verify_database_schema_current)
     monkeypatch.setattr(
         main,
         "settings",
-        SimpleNamespace(AUTO_CREATE_TABLES=False, ENVIRONMENT="production"),
+        SimpleNamespace(
+            ENVIRONMENT="test",
+            DATABASE_URL="postgresql+asyncpg://postgres:postgres@db:5432/auth_db",
+            CORS_ALLOWED_ORIGINS=["http://localhost:5173"],
+        ),
     )
-    monkeypatch.setattr(main, "engine", fake_engine)
-    monkeypatch.setattr(main, "logger", fake_logger)
 
     async with main.lifespan(main.app):
-        pass
+        fake_logger.info.assert_any_call("Starting up application, connecting to database...")
 
-    fake_engine.begin.assert_not_called()
+    fake_verify_database_schema_current.assert_not_called()
     fake_engine.dispose.assert_awaited_once_with()
-    fake_logger.info.assert_any_call(
-        "Automatic schema creation is disabled for environment '%s'.",
-        "production",
-    )
 
 
 def test_get_cors_middleware_kwargs_uses_settings_origins(

@@ -4,7 +4,7 @@ This is a FastAPI-based backend application with built-in JWT authentication,
 SQLAlchemy integration, and a Chroma-backed RAG document store.
 
 ## Prerequisites
-- Python 3.10+
+- Python 3.11+
 - PostgreSQL (or SQLite for local development)
 
 ## Setup Instructions
@@ -74,6 +74,7 @@ CHROMA_COLLECTION_NAME="rag_documents"
 
 To start the FastAPI development server using `uv`:
 ```bash
+uv run alembic upgrade head
 uv run uvicorn src.main:app --reload
 ```
 The API documentation will be available at `http://127.0.0.1:8000/docs`.
@@ -82,11 +83,54 @@ If you want the RAG endpoints to work while running the backend directly on
 your host, make sure a Chroma server is reachable at the `CHROMA_*` endpoint
 you configured above.
 
+The backend is schema-passive at runtime. Run Alembic before starting the API
+against a fresh or upgraded database. If the connected database is behind the
+current Alembic head revision, application startup now fails fast with a clear
+migration error instead of serving traffic against a stale schema.
+
+## Database Setup
+
+The database schema is managed by Alembic.
+
+Common commands:
+
+```bash
+uv run alembic upgrade head
+uv run alembic downgrade -1
+```
+
+Deterministic admin and security accounts can be created using the provided bootstrap scripts in `infra/dev/`.
+
+## Schema-Only Handoff
+
+The default teammate/deploy handoff is `schema only`, not a transfer of live
+application rows.
+
+Typical flow on another machine:
+
+1. Provision an empty PostgreSQL database.
+2. Configure `DATABASE_URL` and the other required environment variables.
+3. Run `uv run alembic upgrade head`.
+4. Optionally run an explicit bootstrap step for deterministic admin/security accounts if that environment needs them.
+5. Start the backend.
+
+This keeps schema history separate from bootstrap data. For dev and E2E flows,
+the fixed privileged accounts remain one-off bootstrap jobs, while ordinary
+test users are still created dynamically through the signup API.
+
 ## Running Tests
 
-To run the `pytest` suite, simply use `uv run`. 
-Because of our `pyproject.toml` configuration, `uv` automatically sets the correct `PYTHONPATH` and loads test environment variables from `.env.example`.
+To run the local `pytest` suite, simply use `uv run`.
+Because of our `pyproject.toml` configuration, `uv` automatically sets the
+correct `PYTHONPATH` and loads test environment variables from `.env.example`.
 
 ```bash
 uv run pytest
+```
+
+To run the backend and frontend test suites together in Docker Compose, run the
+following command from the repository root:
+
+```bash
+./scripts/test-compose.sh
 ```

@@ -5,11 +5,9 @@ import { Card, DataTable, Button, Modal, Badge, Spinner, SearchBar } from '@/com
 import { InviteUserForm } from '@/components/forms/InviteUserForm';
 
 const roleBadgeVariant: Record<UserRole, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
+  user: 'info',
   admin: 'danger',
   security: 'warning',
-  it: 'info',
-  hr: 'success',
-  finance: 'default',
 };
 
 export function UserManagementPage() {

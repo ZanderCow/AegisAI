@@ -28,8 +28,12 @@ different production configuration path and should not be copied into
 To start the development environment in the background, run:
 
 ```bash
-docker compose -f infra/docker-compose.dev.yml up -d
+docker compose -f infra/docker-compose.dev.yml up --build -d
 ```
+
+The dev stack now runs an explicit Alembic migration step before the backend
+starts. It also bootstraps the deterministic local `admin` and `security`
+accounts as separate one-off jobs after the schema is in place.
 
 For provider-backed chat in the dev stack, set `GROQ_API_KEY`,
 `GEMINI_API_KEY`, and `DEEPSEEK_API_KEY` in `infra/.env` or export them
@@ -42,7 +46,7 @@ development environment.
 Once running:
 - Frontend is accessible at: `http://localhost:5173`
 - Backend: `http://localhost:8000` — [`/docs`](http://localhost:8000/docs) (Swagger), [`/health`](http://localhost:8000/health), and JSON endpoints under `/api/v1` (e.g. `POST /api/v1/auth/signup`).
-- Database is running on port: `5432`
+- Database is reachable inside Docker Compose at `db:5432`
 - Chroma persists its vector data in the named Docker volume `chroma_data`
 
 To stop the development environment, run:
@@ -59,6 +63,25 @@ docker compose -f infra/docker-compose.dev.yml down -v
 
 ---
 
+### Unit and Integration Testing
+
+To run the backend and frontend unit/integration test suites together from a
+single command, use the test runner script:
+
+```bash
+./scripts/test-compose.sh
+```
+
+The script builds the test images, starts the test-only infrastructure, runs
+both suites, and cleans up automatically. If you need to clean up the stack
+manually afterward, run:
+
+```bash
+docker compose -f infra/docker-compose.test.yml down --volumes --remove-orphans
+```
+
+---
+
 ### End-to-End (E2E) Testing Environment
 
 The E2E environment runs the same application stack, including Chroma,
@@ -69,8 +92,12 @@ automatically executes the E2E test suite.
 To start the E2E environment and watch the test output, run:
 
 ```bash
-docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit
+./scripts/test-compose-e2e.sh
 ```
+
+Like the dev stack, the E2E stack migrates the database first, then creates
+the deterministic privileged accounts used by Playwright, while ordinary test
+users continue to be created dynamically during each run.
 
 For provider-backed RAG E2E tests, set at least one of `GROQ_API_KEY`,
 `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY` in `infra/.env` or export them
@@ -81,10 +108,11 @@ Playwright RAG test to use a specific provider and model when more than
 one key is available. Production AI credentials are routed separately
 and should not be added to the local development env file.
 
-Using `--abort-on-container-exit` ensures that the entire stack stops and cleans up automatically once the e2e test runner container finishes executing the tests.
+The wrapper tears the stack down automatically after the Playwright run
+finishes, even when a test fails.
 
 To stop and remove the containers manually, run:
 
 ```bash
-docker compose -f infra/docker-compose.e2e.yml down
+docker compose -f infra/docker-compose.e2e.yml down --volumes --remove-orphans
 ```

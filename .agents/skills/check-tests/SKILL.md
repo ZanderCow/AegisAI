@@ -12,8 +12,8 @@ Always run from the repository root. Use `docker compose`, not `docker-compose`.
 ## Repo-Specific Compose Files
 
 - Dev smoke check: `infra/docker-compose.dev.yml`
-- Backend/frontend unit and integration tests: `infra/docker-compose.test.yml`
-- End-to-end tests: `infra/docker-compose.e2e.yml`
+- Backend/frontend unit and integration tests: `./scripts/test-compose.sh` using `infra/docker-compose.test.yml`
+- End-to-end tests: `./scripts/test-compose-e2e.sh` using `infra/docker-compose.e2e.yml`
 
 ## Ground Rules
 
@@ -53,56 +53,80 @@ Always tear it down before continuing:
 docker compose -f infra/docker-compose.dev.yml down
 ```
 
-## Step 2: Backend + Frontend Test Stack
+## Step 2: Backend + Frontend Unit/Integration Tests
 
-Run the compose file that executes backend `pytest` and frontend `vitest`.
+Run the canonical repository test runner from the repository root:
 
 ```bash
-docker compose -f infra/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-test
+./scripts/test-compose.sh
 ```
 
 Important repo detail:
 
-- `backend-test` runs `uv run pytest tests/`
-- `backend-test` writes its exit code to `/results/backend-test.exit`, touches `/results/backend-test.done`, then stays alive so the next container can read the result
-- `frontend-test` waits for `backend-test` to become healthy, then runs `npm run test -- --run`
-- The overall exit code should be taken from `frontend-test`
-- If `backend-test` never becomes healthy, that means setup failed before frontend tests started
+- This script is the canonical local and CI entrypoint for backend/frontend unit and integration tests
+- It builds the `backend-test` and `frontend-test` images, starts `db` and `chroma`, runs backend `pytest`, then runs frontend `vitest`
+- The backend test command is `uv run pytest tests/`
+- The frontend test command is `npm run test -- --run`
+- The script prints a final summary with both exit codes and then cleans the stack up automatically with `docker compose -f infra/docker-compose.test.yml down --volumes --remove-orphans`
+- If the script fails before either test suite starts, treat that as a Docker or environment failure rather than a test regression
 
-After the run, inspect logs before cleanup if you need more detail:
+If you need to preserve the full run output, ask first and prefer a temporary
+file outside the repo root so you do not dirty the working tree:
 
 ```bash
-docker compose -f infra/docker-compose.test.yml logs --no-color backend-test frontend-test
-docker compose -f infra/docker-compose.test.yml ps
+tmp_log="$(mktemp -t compose-test.XXXXXX.log)"
+./scripts/test-compose.sh 2>&1 | tee "${tmp_log}"
+```
+
+For focused troubleshooting after a failure, you may rerun the underlying test containers manually:
+
+```bash
+docker compose -f infra/docker-compose.test.yml build backend-test frontend-test
+docker compose -f infra/docker-compose.test.yml up -d db chroma
+docker compose -f infra/docker-compose.test.yml run --rm --no-deps backend-test
+docker compose -f infra/docker-compose.test.yml run --rm --no-deps frontend-test
+docker compose -f infra/docker-compose.test.yml down -v --remove-orphans
 ```
 
 Your analysis should explicitly state:
 
 - Whether backend tests passed
 - Whether frontend tests passed
-- Whether frontend tests were blocked because backend-test never became healthy
+- Which exit code the script returned
 - Any failing test names, assertion messages, or stack traces that matter
-- Whether the failure happened before tests actually started
-
-Always tear the stack down:
-
-```bash
-docker compose -f infra/docker-compose.test.yml down -v --remove-orphans
-```
+- Whether the failure happened during image build, infrastructure startup, backend tests, or frontend tests
 
 ## Step 3: E2E Stack
 
-Run the full E2E environment and use the Playwright container's exit code as the result.
+## Step 3: E2E Stack
+
+Run the canonical repository E2E test runner from the repository root:
 
 ```bash
-docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
+./scripts/test-compose-e2e.sh
 ```
 
-If you need more detail before cleanup:
+Important repo detail:
+
+- This script builds the images, starts the infrastructure dependencies, and explicitly isolates Playwright logging via a `docker compose run` command.
+- Like the unit test wrapper, it prints an exact exit code at the end and automatically tears down the stack using `down -v --remove-orphans`.
+- If the script fails before tests start, treat that as an environment or setup failure rather than an E2E regression.
+
+If you need to preserve the full run output, ask first and prefer a temporary
+file outside the repo root so you do not dirty the working tree:
 
 ```bash
-docker compose -f infra/docker-compose.e2e.yml logs --no-color e2e backend frontend
-docker compose -f infra/docker-compose.e2e.yml ps
+tmp_log="$(mktemp -t compose-e2e.XXXXXX.log)"
+./scripts/test-compose-e2e.sh 2>&1 | tee "${tmp_log}"
+```
+
+For focused troubleshooting after a failure, you may rerun the underlying test containers manually:
+
+```bash
+docker compose -f infra/docker-compose.e2e.yml build
+docker compose -f infra/docker-compose.e2e.yml up -d backend frontend add-admin-user-to-db add-security-user-to-db
+docker compose -f infra/docker-compose.e2e.yml run --rm e2e
+docker compose -f infra/docker-compose.e2e.yml down -v --remove-orphans
 ```
 
 Notes:
@@ -112,12 +136,6 @@ Notes:
 - `rag.spec.ts` skips when none of `GROQ_API_KEY`, `GEMINI_API_KEY`, or `DEEPSEEK_API_KEY` is set
 - If `E2E_PROVIDER` is set without its matching API key, treat that as configuration failure
 - If the suite passes with one or more skipped tests, report that clearly instead of calling it a clean full pass
-
-Always tear the stack down:
-
-```bash
-docker compose -f infra/docker-compose.e2e.yml down -v --remove-orphans
-```
 
 ## Final Report Format
 
@@ -145,3 +163,13 @@ If anything failed, keep the report actionable:
 - Name the failing service or test when available
 - Quote or summarize the most useful error
 - Distinguish test failures from setup failures
+
+When relevant, note that GitHub Actions uses the same compose wrappers by running:
+
+```bash
+# For unit/integration tests:
+./scripts/test-compose.sh
+
+# For E2E tests:
+./scripts/test-compose-e2e.sh
+```

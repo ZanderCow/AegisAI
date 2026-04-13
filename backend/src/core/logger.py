@@ -4,7 +4,7 @@ Provides a configured logger instance that only emits logs when
 the application is running in the production environment.
 """
 import logging
-from src.core.config import settings
+import os
 
 def get_logger(name: str) -> logging.Logger:
     """Retrieves a logger instance configured for the specific module.
@@ -23,7 +23,7 @@ def get_logger(name: str) -> logging.Logger:
     
     # Avoid adding duplicate handlers if get_logger is called multiple times
     if not logger.handlers:
-        is_production = getattr(settings, "ENVIRONMENT", "development").lower() == "production"
+        is_production = os.getenv("ENVIRONMENT", "development").lower() == "production"
         
         if is_production:
             logger.setLevel(logging.INFO)

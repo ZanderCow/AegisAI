@@ -1,5 +1,9 @@
+/**
+ * Mock user records used by admin and role-management views in local UI flows.
+ */
 import type { User } from '@/types';
 
+/** Stable user fixtures that drive mock-only tables and navigation states. */
 export const mockUsers: User[] = [
   {
     id: 'u1',
@@ -19,43 +23,26 @@ export const mockUsers: User[] = [
   },
   {
     id: 'u3',
-    email: 'ivan@aegisai.com',
-    name: 'Ivan IT',
-    role: 'it',
+    email: 'uma@aegisai.com',
+    name: 'Uma User',
+    role: 'user',
     createdAt: '2025-02-15T11:00:00Z',
     lastLogin: '2025-06-09T16:20:00Z',
   },
   {
     id: 'u4',
-    email: 'hannah@aegisai.com',
-    name: 'Hannah HR',
-    role: 'hr',
+    email: 'ulysses@aegisai.com',
+    name: 'Ulysses User',
+    role: 'user',
     createdAt: '2025-03-01T09:30:00Z',
     lastLogin: '2025-06-10T09:00:00Z',
   },
   {
     id: 'u5',
-    email: 'frank@aegisai.com',
-    name: 'Frank Finance',
-    role: 'finance',
+    email: 'ursula@aegisai.com',
+    name: 'Ursula User',
+    role: 'user',
     createdAt: '2025-03-10T14:00:00Z',
     lastLogin: '2025-06-08T11:30:00Z',
   },
-  {
-    id: 'u6',
-    email: 'tina@aegisai.com',
-    name: 'Tina IT',
-    role: 'it',
-    createdAt: '2025-04-01T08:00:00Z',
-    lastLogin: '2025-06-10T10:15:00Z',
-  },
 ];
-
-export const mockPasswords: Record<string, string> = {
-  'admin@aegisai.com': 'admin123',
-  'sarah@aegisai.com': 'security123',
-  'ivan@aegisai.com': 'it123',
-  'hannah@aegisai.com': 'hr123',
-  'frank@aegisai.com': 'finance123',
-  'tina@aegisai.com': 'it123',
-};

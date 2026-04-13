@@ -8,10 +8,13 @@ import json
 import httpx
 
 from src.core.logger import get_logger
+from src.moderation.exceptions import ContentPolicyError
 
 logger = get_logger("PROVIDER_GROQ")
 
 _BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+_CONTENT_POLICY_MARKERS = ("content_filter", "content_policy", "policy_violation", "moderation")
 
 
 async def stream(messages: list[dict], model: str, api_key: str):
@@ -27,6 +30,9 @@ async def stream(messages: list[dict], model: str, api_key: str):
 
     Yields:
         str: Text content chunks from the streaming response.
+
+    Raises:
+        ContentPolicyError: If Groq's content filter blocks the request.
     """
     async with httpx.AsyncClient(timeout=60) as client:
         async with client.stream(
@@ -38,6 +44,10 @@ async def stream(messages: list[dict], model: str, api_key: str):
             },
             json={"model": model, "messages": messages, "stream": True},
         ) as response:
+            if response.status_code == 400:
+                body = (await response.aread()).decode("utf-8", errors="ignore").lower()
+                if any(marker in body for marker in _CONTENT_POLICY_MARKERS):
+                    raise ContentPolicyError("Groq content policy violation")
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):

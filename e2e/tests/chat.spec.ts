@@ -1,272 +1,218 @@
+/**
+ * Covers the core chat workspace flows for authenticated users.
+ *
+ * Test Flow:
+ * 1. Guards: Verify /chat is protected from unauthenticated users.
+ * 2. Conversations: Create chats -> Select from sidebar -> Verify input UI -> Delete chat.
+ * 3. Messaging: Select provider (Groq/Gemini/DeepSeek) -> Send message -> Verify list update.
+ */
 import { test, expect } from '@playwright/test';
-
-// Build a fake JWT the frontend can decode (signature is ignored by the client).
-function makeFakeJWT(payload: Record<string, unknown>): string {
-    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64');
-    const body = Buffer.from(JSON.stringify(payload)).toString('base64');
-    return `${header}.${body}.fakesig`;
-}
-
-const VALID_TOKEN = makeFakeJWT({
-    sub: 'e2e-user-id',
-    email: 'e2e@example.com',
-    exp: Math.floor(Date.now() / 1000) + 3600,
-});
-
-const SEED_CONVERSATIONS = [
-    {
-        id: 'conv-1',
-        title: 'Test Conversation',
-        provider: 'groq',
-        model: 'llama-3.1-8b-instant',
-        createdAt: new Date().toISOString(),
-        lastMessageAt: new Date().toISOString(),
-        lastMessage: 'Hello there',
-    },
-    {
-        id: 'conv-2',
-        title: 'Second Chat',
-        provider: 'gemini',
-        model: 'gemini-2.5-flash',
-        createdAt: new Date().toISOString(),
-        lastMessageAt: new Date().toISOString(),
-    },
-];
-
-// Inject auth token (and optionally seeded conversations) before page load.
-async function setAuth(page: Parameters<typeof test>[1] extends (...args: infer A) => unknown ? A[0] : never, conversations?: typeof SEED_CONVERSATIONS) {
-    await page.addInitScript(
-        ({ token, convos }) => {
-            localStorage.setItem('aegis_token', token);
-            if (convos) {
-                const payload = JSON.parse(atob(token.split('.')[1]));
-                const userId = payload.sub || 'anonymous';
-                localStorage.setItem(`aegis_conversations_${userId}`, JSON.stringify(convos));
-            }
-        },
-        { token: VALID_TOKEN, convos: conversations ?? null },
-    );
-}
+import { attachPageDebugLogging, createAndLoginUser } from './helpers/auth';
+import {
+  conversationListItem,
+  conversationDeleteButton,
+  createConversation,
+  hoverConversation,
+  openConversationFromList,
+  openNewConversationModal,
+  sendMessageWithButton,
+  waitForPreviewText,
+} from './helpers/chat';
 
 test.beforeEach(({ page }) => {
-    page.on('console', msg => console.log('BROWSER:', msg.text()));
-    page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
+  // Bubble browser errors into test logs to make flaky chat failures diagnosable.
+  attachPageDebugLogging(page);
 });
 
 test.describe('Chat page – authentication guard', () => {
-    test('unauthenticated user is redirected to /login', async ({ page }) => {
-        await page.goto('/chat');
-        await expect(page).toHaveURL(/\/login/);
-    });
+  test('unauthenticated user is redirected to /login', async ({ page }) => {
+    await page.goto('/chat');
+    await expect(page).toHaveURL(/\/login$/);
+  });
 
-    test('authenticated user can access /chat', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await expect(page).toHaveURL(/\/chat/);
-    });
+  test('authenticated user can access /chat', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-auth');
+    await page.goto('/chat');
+    await expect(page).toHaveURL(/\/chat$/);
+  });
 });
 
 test.describe('Chat page – conversation list', () => {
-    test('shows empty state when no conversations exist', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await expect(page.getByText('No conversations yet')).toBeVisible();
-    });
+  test('shows empty state when no conversations exist', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-empty');
+    await page.goto('/chat');
+    await expect(page.getByText('No conversations yet')).toBeVisible();
+  });
 
-    test('shows seeded conversations in the sidebar', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await expect(page.getByText('Test Conversation')).toBeVisible();
-        await expect(page.getByText('Second Chat')).toBeVisible();
-    });
+  test('shows created conversations in the sidebar', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-sidebar');
+    await createConversation(page, 'Test Conversation');
+    await createConversation(page, 'Second Chat', 'gemini');
 
-    test('shows last message preview in the list', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await expect(page.getByText('Hello there')).toBeVisible();
-    });
+    await page.goto('/chat');
+    await expect(page.getByText('Test Conversation')).toBeVisible();
+    await expect(page.getByText('Second Chat')).toBeVisible();
+  });
+
+  test('shows last message preview in the list', async ({ page, request }) => {
+    test.slow();
+    await createAndLoginUser(page, request, 'chat-preview');
+    await createConversation(page, 'Preview Conversation');
+    await sendMessageWithButton(page, 'Summarize this chat for me.');
+
+    const preview = await waitForPreviewText(page, 'Preview Conversation');
+    expect(preview.length).toBeGreaterThan(0);
+  });
 });
 
 test.describe('Chat page – new conversation modal', () => {
-    test('clicking "+ New Conversation" opens the modal', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await page.getByText('+ New Conversation').click();
-        await expect(page.getByText('New Conversation').first()).toBeVisible();
-        await expect(page.getByPlaceholder('New Chat')).toBeVisible();
-    });
+  test('clicking "+ New Conversation" opens the modal', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-modal-open');
+    await openNewConversationModal(page);
+    await expect(page.getByPlaceholder('New Chat')).toBeVisible();
+  });
 
-    test('modal has provider and model fields', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await page.getByText('+ New Conversation').click();
-        await expect(page.locator('select')).toBeVisible();
-        await expect(page.getByPlaceholder(/llama/i)).toBeVisible();
-    });
+  test('modal has provider and model fields', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-modal-fields');
+    await openNewConversationModal(page);
+    await expect(page.locator('select')).toBeVisible();
+    await expect(page.getByLabel('Model')).toBeVisible();
+  });
 
-    test('provider options include Groq, Gemini, and DeepSeek', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await page.getByText('+ New Conversation').click();
-        const select = page.locator('select');
-        await expect(select.locator('option', { hasText: 'Groq' })).toBeAttached();
-        await expect(select.locator('option', { hasText: 'Gemini' })).toBeAttached();
-        await expect(select.locator('option', { hasText: 'DeepSeek' })).toBeAttached();
-    });
+  test('provider options include Groq, Gemini, and DeepSeek', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-provider-options');
+    await openNewConversationModal(page);
 
-    test('changing provider updates the default model', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await page.getByText('+ New Conversation').click();
+    const select = page.locator('select');
+    await expect(select.locator('option', { hasText: 'Groq' })).toBeAttached();
+    await expect(select.locator('option', { hasText: 'Gemini' })).toBeAttached();
+    await expect(select.locator('option', { hasText: 'DeepSeek' })).toBeAttached();
+  });
 
-        const modelInput = page.getByPlaceholder(/llama/i);
-        await expect(modelInput).toHaveValue('llama-3.1-8b-instant');
+  test('changing provider updates the default model', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-provider-model');
+    await openNewConversationModal(page);
 
-        await page.locator('select').selectOption('gemini');
-        await expect(page.getByLabel('Model')).toHaveValue('gemini-2.5-flash');
+    await expect(page.getByLabel('Model')).toHaveValue('llama-3.1-8b-instant');
+    await page.locator('select').selectOption('gemini');
+    await expect(page.getByLabel('Model')).toHaveValue('gemini-2.5-flash');
+    await page.locator('select').selectOption('deepseek');
+    await expect(page.getByLabel('Model')).toHaveValue('deepseek-chat');
+  });
 
-        await page.locator('select').selectOption('deepseek');
-        await expect(page.getByLabel('Model')).toHaveValue('deepseek-chat');
-    });
+  test('Cancel button closes the modal', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-modal-cancel');
+    await openNewConversationModal(page);
 
-    test('Cancel button closes the modal', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await page.getByText('+ New Conversation').click();
-        await expect(page.getByRole('heading', { name: 'New Conversation' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('heading', { name: 'New Conversation' })).not.toBeVisible();
+  });
 
-        await page.getByRole('button', { name: 'Cancel' }).click();
-        await expect(page.getByRole('heading', { name: 'New Conversation' })).not.toBeVisible();
-    });
+  test('creating a conversation persists it in the UI', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-modal-create');
+    await createConversation(page, 'My E2E Chat');
 
-    test('creating a conversation calls the API and shows an error on failure', async ({ page }) => {
-        await setAuth(page);
-        await page.goto('/chat');
-        await page.getByText('+ New Conversation').click();
-
-        await page.getByLabel('Title (optional)').fill('My E2E Chat');
-        await page.getByRole('button', { name: 'Create' }).click();
-
-        // Either the conversation was created (API available) or an error is shown
-        try {
-            // API success path: modal closes and conversation appears
-            await expect(page.getByRole('heading', { name: 'New Conversation' })).not.toBeVisible({ timeout: 3000 });
-        } catch {
-            // API failure path: error message is shown inside the modal
-            const errorMsg = page.locator('.text-red-400.bg-red-900\\/30, p.text-red-400');
-            await expect(errorMsg.first()).toBeVisible();
-        }
-    });
+    await expect(page.getByRole('heading', { name: 'My E2E Chat' })).toBeVisible();
+    await expect(conversationListItem(page, 'My E2E Chat')).toBeVisible();
+  });
 });
 
 test.describe('Chat page – selecting a conversation', () => {
-    test('shows empty state when no conversation is selected', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        // On desktop, both panel and empty state are visible simultaneously
-        await expect(page.getByText('No conversation selected')).toBeVisible();
-    });
+  test('shows empty state when no conversation is selected', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-empty-selected');
+    await createConversation(page, 'Selection Test Conversation');
 
-    test('clicking a conversation opens the chat window', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
+    await page.goto('/chat');
+    await expect(page.getByText('No conversation selected')).toBeVisible();
+  });
 
-        await page.getByText('Test Conversation').click();
+  test('clicking a conversation opens the chat window', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-open-conversation');
+    await createConversation(page, 'Test Conversation');
 
-        // The chat window header shows the conversation title
-        await expect(page.getByRole('heading', { name: 'Test Conversation' })).toBeVisible();
-        // Provider and model info line
-        await expect(page.getByText(/groq/i)).toBeVisible();
-    });
+    await page.goto('/chat');
+    await openConversationFromList(page, 'Test Conversation');
+    await expect(page.getByText(/groq/i)).toBeVisible();
+  });
 
-    test('selected conversation shows the chat input textarea', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await page.getByText('Test Conversation').click();
+  test('selected conversation shows the chat input textarea', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-input-visible');
+    await createConversation(page, 'Input Test Conversation');
 
-        await expect(page.getByPlaceholder(/Type your message/i)).toBeVisible();
-    });
+    await page.goto('/chat');
+    await openConversationFromList(page, 'Input Test Conversation');
+    await expect(page.getByPlaceholder(/Type your message/i)).toBeVisible();
+  });
 });
 
 test.describe('Chat page – chat input', () => {
-    test('send button is disabled when textarea is empty', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await page.getByText('Test Conversation').click();
+  test('send button is disabled when textarea is empty', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-send-disabled');
+    await createConversation(page, 'Disabled Send Conversation');
 
-        // The send button (svg icon button at end of input) should be disabled
-        const sendButton = page.locator('form').getByRole('button');
-        await expect(sendButton).toBeDisabled();
-    });
+    const sendButton = page.locator('form').getByRole('button');
+    await expect(sendButton).toBeDisabled();
+  });
 
-    test('send button becomes enabled after typing a message', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await page.getByText('Test Conversation').click();
+  test('send button becomes enabled after typing a message', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-send-enabled');
+    await createConversation(page, 'Enabled Send Conversation');
 
-        await page.getByPlaceholder(/Type your message/i).fill('Hello, AI!');
-        const sendButton = page.locator('form').getByRole('button');
-        await expect(sendButton).toBeEnabled();
-    });
+    await page.getByPlaceholder(/Type your message/i).fill('Hello, AI!');
+    const sendButton = page.locator('form').getByRole('button');
+    await expect(sendButton).toBeEnabled();
+  });
 
-    test('pressing Enter sends the message (or shows an error if API unavailable)', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await page.getByText('Test Conversation').click();
+  test('pressing Enter sends the message', async ({ page, request }) => {
+    test.slow();
+    await createAndLoginUser(page, request, 'chat-enter-send');
+    await createConversation(page, 'Enter Send Conversation');
 
-        const textarea = page.getByPlaceholder(/Type your message/i);
-        await textarea.fill('Hello, AI!');
-        await textarea.press('Enter');
+    const responsePromise = page.waitForResponse(
+      response =>
+        response.url().includes('/messages/send')
+        && response.request().method() === 'POST',
+    );
 
-        try {
-            // If API is available: the user message appears in the message list
-            await expect(page.getByText('Hello, AI!')).toBeVisible({ timeout: 3000 });
-        } catch {
-            // If API unavailable: textarea is cleared or stays, but no crash
-            // The page should still be functional (no error overlay)
-            await expect(page.locator('body')).toBeVisible();
-        }
-    });
+    const textarea = page.getByPlaceholder(/Type your message/i);
+    await textarea.fill('Hello, AI!');
+    await textarea.press('Enter');
 
-    test('Shift+Enter adds a newline instead of sending', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
-        await page.getByText('Test Conversation').click();
+    const response = await responsePromise;
+    expect(response.ok()).toBeTruthy();
+    await expect(page.getByText('Hello, AI!', { exact: true })).toBeVisible();
+  });
 
-        const textarea = page.getByPlaceholder(/Type your message/i);
-        await textarea.fill('line one');
-        await textarea.press('Shift+Enter');
-        await textarea.type('line two');
+  test('Shift+Enter adds a newline instead of sending', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-shift-enter');
+    await createConversation(page, 'Shift Enter Conversation');
 
-        // Textarea should now contain a newline
-        const value = await textarea.inputValue();
-        expect(value).toContain('\n');
-    });
+    const textarea = page.getByPlaceholder(/Type your message/i);
+    await textarea.fill('line one');
+    await textarea.press('Shift+Enter');
+    await textarea.type('line two');
+
+    await expect(textarea).toHaveValue('line one\nline two');
+  });
 });
 
 test.describe('Chat page – deleting a conversation', () => {
-    test('hovering a conversation reveals the delete button', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
+  test('hovering a conversation reveals the delete button', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-delete-hover');
+    await createConversation(page, 'Delete Hover Conversation');
 
-        const convItem = page.locator('li').filter({ hasText: 'Test Conversation' });
-        await convItem.hover();
+    await hoverConversation(page, 'Delete Hover Conversation');
+    await expect(conversationDeleteButton(page, 'Delete Hover Conversation')).toBeVisible();
+  });
 
-        // The delete button (trash icon) becomes visible on hover
-        const deleteBtn = convItem.locator('button');
-        await expect(deleteBtn).toBeVisible();
-    });
+  test('clicking delete removes the conversation from the list', async ({ page, request }) => {
+    await createAndLoginUser(page, request, 'chat-delete-remove');
+    await createConversation(page, 'Delete Me Conversation');
 
-    test('clicking delete removes the conversation from the list', async ({ page }) => {
-        await setAuth(page, SEED_CONVERSATIONS);
-        await page.goto('/chat');
+    await expect(conversationListItem(page, 'Delete Me Conversation')).toBeVisible();
+    await hoverConversation(page, 'Delete Me Conversation');
+    await conversationDeleteButton(page, 'Delete Me Conversation').click();
 
-        await expect(page.getByText('Test Conversation')).toBeVisible();
-
-        const convItem = page.locator('li').filter({ hasText: 'Test Conversation' });
-        await convItem.hover();
-        await convItem.locator('button').click();
-
-        await expect(page.getByText('Test Conversation')).not.toBeVisible();
-    });
+    await expect(conversationListItem(page, 'Delete Me Conversation')).not.toBeVisible();
+  });
 });

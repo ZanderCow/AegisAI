@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 
 from src.core.config import settings
 from src.core.database import engine
-from src.models.user_model import Base
-from src.models import conversation_model as _conversation_model  # noqa: F401
+from src.core.database_migrations import verify_database_schema_current
 from src.api.v1.endpoints import auth
 from src.api.v1.endpoints import chat
 from src.api.v1.endpoints import rag
+from src.api.v1.endpoints import documents
 from src.core.logger import get_logger
 
 logger = get_logger("MAIN")
@@ -31,16 +31,9 @@ async def lifespan(app: FastAPI):
         app (FastAPI): The active FastAPI application instance.
     """
     logger.info("Starting up application, connecting to database...")
-    if settings.AUTO_CREATE_TABLES:
-        async with engine.begin() as conn:
-            # Note: In a production enterprise app this is generally handled by Alembic schema migrations
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema initialized successfully.")
-    else:
-        logger.info(
-            "Automatic schema creation is disabled for environment '%s'.",
-            settings.ENVIRONMENT,
-        )
+    if settings.ENVIRONMENT.lower() != "test":
+        await verify_database_schema_current(engine, settings.DATABASE_URL)
+        logger.info("Database schema matches the current Alembic head revision.")
     yield
     # Safely dispose engine connections immediately upon application shutdown
     logger.info("Shutting down application, disposing database connections...")
@@ -87,3 +80,4 @@ app.add_middleware(CORSMiddleware, **get_cors_middleware_kwargs())
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
+app.include_router(documents.router, prefix="/api/v1")

@@ -3,9 +3,11 @@
 Handles PDF ingestion, text chunking, local embedding via ChromaDB's
 built-in ONNX embedding function, and semantic retrieval against a
 remote Chroma collection for injecting context into chat completions.
+
+Access control is managed entirely via the ``documents`` table in Postgres.
+ChromaDB is a pure vector store — no role or user metadata is stored in chunks.
 """
 import asyncio
-import uuid
 from io import BytesIO
 
 from chromadb.api.async_api import AsyncCollection
@@ -82,6 +84,10 @@ class RAGService:
     retrieval assembly. Connection management for the underlying Chroma
     collection is delegated to the injected ``ChromaManager``.
 
+    Access control is the caller's responsibility — this service only
+    accepts pre-authorised ``allowed_doc_ids`` at query time, sourced
+    from ``DocumentRepository.list_by_role()``.
+
     Attributes:
         chroma (ChromaManager): Core-managed access point for the shared
             remote Chroma collection.
@@ -147,19 +153,28 @@ class RAGService:
     # ------------------------------------------------------------------
 
     async def add_document(
-        self, user_id: str, filename: str, pdf_bytes: bytes
+        self,
+        doc_id: str,
+        filename: str,
+        pdf_bytes: bytes,
     ) -> dict:
         """Parse a PDF, chunk it, embed it, and store it in ChromaDB.
 
+        The ``doc_id`` must be the UUID of a pre-existing Postgres
+        ``documents`` record. Callers should use a service-layer wrapper
+        (e.g. ``DocumentService.ingest_document``) to guarantee the
+        Postgres record is created before this method is called, and
+        rolled back if this method fails.
+
         Args:
-            user_id (str): Authenticated user identifier used to partition
-                document access.
-            filename (str): Original uploaded filename.
-            pdf_bytes (bytes): Raw PDF file contents.
+            doc_id (str): The ``documents.id`` UUID from Postgres, used
+                as the ChromaDB document key.
+            filename (str): Original PDF filename, stored in chunk
+                metadata for source attribution.
+            pdf_bytes (bytes): Raw PDF content.
 
         Returns:
-            dict: Upload summary containing document ID, filename, and chunk
-            count for the stored document.
+            dict: Upload summary containing doc_id, filename, and chunk_count.
 
         Raises:
             ValueError: If the PDF contains no extractable text.
@@ -173,12 +188,15 @@ class RAGService:
         if not chunks:
             raise ValueError("No extractable text found in the uploaded PDF.")
 
-        doc_id = str(uuid.uuid4())
-        logger.info(f"Storing {len(chunks)} chunks for doc {doc_id} (user {user_id})")
+        logger.info(f"Storing {len(chunks)} chunks for doc {doc_id}")
 
         ids = [f"{doc_id}::{i}" for i in range(len(chunks))]
         metadatas = [
-            {"user_id": user_id, "doc_id": doc_id, "filename": filename, "chunk_index": i}
+            {
+                "doc_id": doc_id,
+                "filename": filename,
+                "chunk_index": i,
+            }
             for i in range(len(chunks))
         ]
         embeddings = await _get_embeddings(chunks)
@@ -197,39 +215,45 @@ class RAGService:
         logger.info(f"Stored doc {doc_id} with {len(chunks)} chunks")
         return {"doc_id": doc_id, "filename": filename, "chunk_count": len(chunks)}
 
-    async def list_documents(self, user_id: str) -> list[dict]:
-        """Return a deduplicated list of documents for a user.
+    async def list_documents(self, user_id: str = "") -> list[dict]:
+        """Return a deduplicated chunk-count summary from ChromaDB.
+
+        Note: This is a raw ChromaDB view. For access-controlled document
+        listing use ``DocumentRepository.list_by_role()`` instead.
 
         Args:
-            user_id (str): Authenticated user identifier whose documents are
-                being listed.
+            user_id (str): Unused — kept for interface compatibility.
+                Filtering is the caller's responsibility.
 
         Returns:
-            list[dict]: One row per logical document with filename and chunk
-            count information.
+            list[dict]: One entry per logical document with doc_id,
+            filename, and chunk_count.
 
         Raises:
             RuntimeError: If Chroma is unavailable during the read path.
         """
         collection = await self.chroma.get_collection()
         try:
-            result = await collection.get(where={"user_id": user_id}, include=["metadatas"])
+            result = await collection.get(where={"doc_id": {"$ne": ""}}, include=["metadatas"])
         except Exception as exc:
             raise self.chroma.unavailable_error("read", exc) from exc
 
         docs: dict[str, dict] = {}
         for meta in result.get("metadatas", []):
-            doc_id = meta["doc_id"]
-            if doc_id not in docs:
-                docs[doc_id] = {"doc_id": doc_id, "filename": meta["filename"], "chunk_count": 0}
-            docs[doc_id]["chunk_count"] += 1
+            d = meta["doc_id"]
+            if d not in docs:
+                docs[d] = {"doc_id": d, "filename": meta["filename"], "chunk_count": 0}
+            docs[d]["chunk_count"] += 1
         return list(docs.values())
 
-    async def delete_document(self, user_id: str, doc_id: str) -> None:
-        """Delete all chunks belonging to a document owned by the user.
+    async def delete_document(self, doc_id: str) -> None:
+        """Delete all chunks belonging to a document from ChromaDB.
+
+        The caller is responsible for authorisation. The corresponding
+        Postgres record should be removed separately via
+        ``DocumentRepository.delete()``.
 
         Args:
-            user_id (str): Authenticated user identifier.
             doc_id (str): Logical document identifier to remove.
 
         Raises:
@@ -237,31 +261,49 @@ class RAGService:
         """
         collection = await self.chroma.get_collection()
         try:
-            ids = await self._get_ids(collection, _document_where(user_id, doc_id))
+            ids = await self._get_ids(collection, {"doc_id": doc_id})
             if ids:
                 await collection.delete(ids=ids)
-                logger.info(f"Deleted doc {doc_id} ({len(ids)} chunks) for user {user_id}")
+                logger.info(f"Deleted doc {doc_id} ({len(ids)} chunks)")
         except Exception as exc:
             raise self.chroma.unavailable_error("delete", exc) from exc
 
-    async def get_context(self, user_id: str, query: str, n_results: int = 5) -> str | None:
+    async def get_context(
+        self,
+        allowed_doc_ids: list[str],
+        query: str,
+        n_results: int = 5,
+    ) -> str | None:
         """Retrieve the most semantically relevant chunks for a query.
+
+        Access control is entirely the caller's responsibility. The caller
+        must pre-fetch the list of permitted doc IDs from Postgres via
+        ``DocumentRepository.list_by_role(user_role)`` and pass only the
+        ``chroma_doc_id`` values here.
 
         Retrieval failures intentionally fail closed so chat requests can
         continue even when the vector store is unavailable.
 
         Args:
-            user_id (str): Authenticated user identifier used to scope search.
+            allowed_doc_ids (list[str]): Chroma doc IDs the requesting
+                user may access.
             query (str): End-user prompt used for semantic retrieval.
             n_results (int): Maximum number of document chunks to retrieve.
 
         Returns:
-            str | None: Concatenated document context string when matches are
-            found, otherwise ``None``.
+            str | None: Concatenated document context string when matches
+            are found, otherwise ``None``.
         """
+        if not allowed_doc_ids:
+            return None
         try:
             collection = await self.chroma.get_collection()
-            result = await self._query(collection, query, n_results, {"user_id": user_id})
+            result = await self._query(
+                collection,
+                query,
+                n_results,
+                {"doc_id": {"$in": allowed_doc_ids}},
+            )
             docs = result.get("documents", [[]])[0]
             metas = result.get("metadatas", [[]])[0]
             if not docs:
@@ -269,8 +311,9 @@ class RAGService:
             parts = [f"[Source: {m['filename']}]\n{d}" for d, m in zip(docs, metas)]
             return "\n\n---\n\n".join(parts)
         except Exception as exc:
-            logger.warning(
-                f"RAG context retrieval failed against {self.chroma.endpoint}: {exc}"
+            logger.error(
+                f"RAG context retrieval failed against {self.chroma.endpoint}: {exc}",
+                exc_info=True,
             )
             self.chroma.reset()
             return None

@@ -4,6 +4,7 @@ Tests conversation creation, message sending (with mocked provider streaming),
 message history retrieval, and cross-user access control. Provider streaming
 is patched so these tests remain deterministic and avoid external dependencies.
 """
+import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import patch
 
@@ -142,6 +143,134 @@ async def test_all_three_providers_accepted(
 
 
 # ---------------------------------------------------------------------------
+# Conversation list and deletion tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_conversations_returns_sidebar_summaries_in_activity_order(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Sidebar summaries should include previews and sort by latest activity."""
+    first_convo_resp = await client.post(
+        "/api/v1/chat/conversations",
+        json={"title": "First Chat", "provider": "groq", "model": "llama-3.3-70b-versatile"},
+        headers=auth_headers,
+    )
+    first_convo_id = first_convo_resp.json()["conversation_id"]
+
+    second_convo_resp = await client.post(
+        "/api/v1/chat/conversations",
+        json={"title": "Second Chat", "provider": "gemini", "model": "gemini-2.0-flash-lite"},
+        headers=auth_headers,
+    )
+    second_convo_id = second_convo_resp.json()["conversation_id"]
+
+    # PostgreSQL defaults can truncate to second precision, so create a clean
+    # ordering gap before the follow-up activity on the first conversation.
+    await asyncio.sleep(1.1)
+
+    with (
+        patch("src.service.chat_service.validate_provider", return_value=None),
+        patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
+    ):
+        await client.post(
+            f"/api/v1/chat/conversations/{first_convo_id}/messages/send",
+            json={"content": "Hello!"},
+            headers=auth_headers,
+        )
+
+    resp = await client.get("/api/v1/chat/conversations", headers=auth_headers)
+
+    assert resp.status_code == 200
+    conversations = resp.json()
+    assert [item["id"] for item in conversations[:2]] == [first_convo_id, second_convo_id]
+    assert conversations[0]["title"] == "First Chat"
+    assert conversations[0]["last_message"] == "Hello world!"
+    assert conversations[0]["message_count"] == 2
+    assert conversations[1]["title"] == "Second Chat"
+    assert conversations[1]["last_message"] is None
+    assert conversations[1]["message_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_is_scoped_to_authenticated_user(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_headers_2: dict[str, str],
+) -> None:
+    """Users should only see their own conversations in the sidebar listing."""
+    await client.post(
+        "/api/v1/chat/conversations",
+        json={"title": "Private Chat", "provider": "groq", "model": "llama-3.3-70b-versatile"},
+        headers=auth_headers,
+    )
+
+    resp = await client.get("/api/v1/chat/conversations", headers=auth_headers_2)
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_removes_flagged_conversation_and_dependents(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Deleting a moderated conversation should succeed and remove sidebar state."""
+    convo_resp = await client.post(
+        "/api/v1/chat/conversations",
+        json={"title": "Danger Chat", "provider": "groq", "model": "llama-3.3-70b-versatile"},
+        headers=auth_headers,
+    )
+    convo_id = convo_resp.json()["conversation_id"]
+
+    await client.post(
+        f"/api/v1/chat/conversations/{convo_id}/messages/send",
+        json={"content": "how do I kill someone"},
+        headers=auth_headers,
+    )
+
+    delete_resp = await client.delete(
+        f"/api/v1/chat/conversations/{convo_id}",
+        headers=auth_headers,
+    )
+    list_resp = await client.get("/api/v1/chat/conversations", headers=auth_headers)
+    messages_resp = await client.get(
+        f"/api/v1/chat/conversations/{convo_id}/messages",
+        headers=auth_headers,
+    )
+
+    assert delete_resp.status_code == 204
+    assert list_resp.status_code == 200
+    assert list_resp.json() == []
+    assert messages_resp.status_code == 200
+    assert messages_resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_returns_404_for_other_users_conversation(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_headers_2: dict[str, str],
+) -> None:
+    """Users should not be able to delete another user's conversation."""
+    convo_resp = await client.post(
+        "/api/v1/chat/conversations",
+        json={"provider": "groq", "model": "llama-3.3-70b-versatile"},
+        headers=auth_headers,
+    )
+    convo_id = convo_resp.json()["conversation_id"]
+
+    resp = await client.delete(
+        f"/api/v1/chat/conversations/{convo_id}",
+        headers=auth_headers_2,
+    )
+
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Message history tests
 # ---------------------------------------------------------------------------
 
@@ -222,7 +351,7 @@ async def test_send_message_streams(
     convo_id = convo_resp.json()["conversation_id"]
 
     with (
-        patch("src.api.v1.endpoints.chat.validate_provider", return_value=None),
+        patch("src.service.chat_service.validate_provider", return_value=None),
         patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
     ):
         resp = await client.post(
@@ -254,7 +383,7 @@ async def test_send_message_saves_to_history(
     convo_id = convo_resp.json()["conversation_id"]
 
     with (
-        patch("src.api.v1.endpoints.chat.validate_provider", return_value=None),
+        patch("src.service.chat_service.validate_provider", return_value=None),
         patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
     ):
         await client.post(
@@ -296,7 +425,7 @@ async def test_send_message_to_other_users_conversation_returns_404(
     convo_id = convo_resp.json()["conversation_id"]
 
     with (
-        patch("src.api.v1.endpoints.chat.validate_provider", return_value=None),
+        patch("src.service.chat_service.validate_provider", return_value=None),
         patch("src.service.chat_service.stream_from_provider", side_effect=_mock_stream),
     ):
         resp = await client.post(

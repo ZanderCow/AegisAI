@@ -59,21 +59,22 @@ class UserRepository:
             logger.info("User not found")
         return user
 
-    async def create_user(self, email: str, hashed_password: str) -> User:
+    async def create_user(self, email: str, hashed_password: str, role: str = "user") -> User:
         """Inserts a new user record into the database.
-        
+
         Args:
             email (str): The new user's email address.
             hashed_password (str): The pre-hashed password string.
-            
+            role (str): The user's role. Defaults to 'user'.
+
         Returns:
             User: The newly created User model including the generated database ID.
-            
+
         Raises:
             SQLAlchemyError: If there is an issue executing the database query or commit.
         """
-        logger.info(f"Creating new user with email: {email}")
-        db_user = User(email=email, hashed_password=hashed_password)
+        logger.info(f"Creating new user with email: {email}, role: {role}")
+        db_user = User(email=email, hashed_password=hashed_password, role=role)
         self.session.add(db_user)
         await self.session.commit()
         await self.session.refresh(db_user)

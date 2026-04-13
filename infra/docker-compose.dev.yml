@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-auth_db}
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -30,6 +28,8 @@ services:
       target: development
     volumes:
       - ../backend:/app
+    env_file:
+      - .env
     environment:
       # Backend application settings shared with production.
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
@@ -45,8 +45,28 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MFA_ENABLED: ${MFA_ENABLED:-false}
+      DUO_CLIENT_ID: ${DUO_CLIENT_ID:-}
+      DUO_CLIENT_SECRET: ${DUO_CLIENT_SECRET:-}
+      DUO_API_HOST: ${DUO_API_HOST:-}
+      DUO_REDIRECT_URI: ${DUO_REDIRECT_URI:-http://localhost:5173/auth/duo/callback}
+      SEED_HIGHER_TIER_USERS: ${SEED_HIGHER_TIER_USERS:-true}
     ports:
       - "8000:8000"
+    command:
+      [
+        "bash",
+        "scripts/start-backend.sh",
+        "uv",
+        "run",
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
     depends_on:
       db:
         condition: service_healthy
@@ -63,29 +83,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-
-  add-admin-user-to-db:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      target: development
-    volumes:
-      - ../backend:/app
-      - ../infra:/infra:ro
-    environment:
-      # Backend bootstrap helper settings.
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/auth_db}
-      SECRET_KEY: ${SECRET_KEY:-test_secret_key_for_local_compose_only}
-      ALGORITHM: ${ALGORITHM:-HS256}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      # Dev-only bootstrap credentials.
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@gmail.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      BACKEND_HEALTH_URL: ${BACKEND_HEALTH_URL:-http://backend:8000/health}
-    command: ["bash", "/infra/dev/add-admin-user-to-db.sh"]
-    depends_on:
-      backend:
-        condition: service_healthy
 
   frontend:
     build:

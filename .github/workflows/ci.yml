@@ -16,19 +16,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate privileged-user seed secrets
+        env:
+          SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_SECURITY_EMAIL: ${{ secrets.SEED_SECURITY_EMAIL }}
+          SEED_SECURITY_PASSWORD: ${{ secrets.SEED_SECURITY_PASSWORD }}
+        run: |
+          missing=0
+
+          for name in SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD SEED_SECURITY_EMAIL SEED_SECURITY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Ensure compose test runner is executable
+        run: chmod +x ./scripts/test-compose.sh
+
       - name: Run compose test suite
-        run: docker compose -f infra/docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from frontend-test
-
-      - name: Capture Compose logs on failure
-        if: failure()
-        run: docker compose -f infra/docker-compose.test.yml logs --no-color > compose-test-logs.txt
-
-      - name: Upload Compose logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: compose-test-logs
-          path: compose-test-logs.txt
+        shell: bash
+        env:
+          SEED_HIGHER_TIER_USERS: "true"
+          admin_user_username: ${{ secrets.SEED_ADMIN_EMAIL }}
+          admin_user_password: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          security_username: ${{ secrets.SEED_SECURITY_EMAIL }}
+          security_password: ${{ secrets.SEED_SECURITY_PASSWORD }}
+        run: ./scripts/test-compose.sh
 
       - name: Tear down stack
         if: always()
@@ -42,6 +61,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate privileged-user seed secrets
+        env:
+          SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_SECURITY_EMAIL: ${{ secrets.SEED_SECURITY_EMAIL }}
+          SEED_SECURITY_PASSWORD: ${{ secrets.SEED_SECURITY_PASSWORD }}
+        run: |
+          missing=0
+
+          for name in SEED_ADMIN_EMAIL SEED_ADMIN_PASSWORD SEED_SECURITY_EMAIL SEED_SECURITY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Validate E2E provider secrets
         env:
@@ -57,23 +96,20 @@ jobs:
           echo "Set one of GROQ_API_KEY, GEMINI_API_KEY, or DEEPSEEK_API_KEY in repository secrets."
           exit 1
 
+      - name: Ensure e2e test runner is executable
+        run: chmod +x ./scripts/test-compose-e2e.sh
+
       - name: Run E2E compose tests
         env:
+          SEED_HIGHER_TIER_USERS: "true"
+          admin_user_username: ${{ secrets.SEED_ADMIN_EMAIL }}
+          admin_user_password: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          security_username: ${{ secrets.SEED_SECURITY_EMAIL }}
+          security_password: ${{ secrets.SEED_SECURITY_PASSWORD }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: docker compose -f infra/docker-compose.e2e.yml up --build --abort-on-container-exit --exit-code-from e2e
-
-      - name: Capture Compose logs on failure
-        if: failure()
-        run: docker compose -f infra/docker-compose.e2e.yml logs --no-color > compose-e2e-logs.txt
-
-      - name: Upload Compose logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: compose-e2e-logs
-          path: compose-e2e-logs.txt
+        run: ./scripts/test-compose-e2e.sh
 
       - name: Tear down stack
         if: always()

@@ -1,31 +1,96 @@
-import { createContext, useCallback, useState, type ReactNode } from 'react';
+/**
+ * Provides chat state and actions for the authenticated workspace.
+ *
+ * The provider coordinates conversation selection, streamed message updates,
+ * and sidebar refreshes on top of the shared `chatService`.
+ */
+import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Conversation, Message } from '@/types';
 import { chatService } from '@/services';
 
+/**
+ * Shape exposed through the chat context.
+ */
 interface ChatContextType {
+  /** Conversations available to the current authenticated user. */
   conversations: Conversation[];
+
+  /** Conversation currently selected in the workspace, if any. */
   currentConversation: Conversation | null;
+
+  /** Messages loaded for the active conversation. */
   messages: Message[];
+
+  /** Indicates whether chat data is being loaded or a conversation is being created. */
   isLoading: boolean;
+
+  /** Indicates whether a streamed assistant response is currently in flight. */
   isSending: boolean;
-  loadConversations: () => void;
+
+  /** Reloads the sidebar conversation list and clears any active selection. */
+  loadConversations: () => Promise<void>;
+
+  /** Selects a conversation and loads its message history. */
   selectConversation: (conversation: Conversation) => Promise<void>;
+
+  /** Sends a message to the active conversation and streams the assistant reply. */
   sendMessage: (content: string) => Promise<void>;
+
+  /** Creates a new conversation and makes it the active workspace context. */
   createConversation: (title: string, provider: string, model: string) => Promise<void>;
-  deleteConversation: (conversationId: string) => void;
+
+  /** Deletes a conversation and clears local state when it was currently selected. */
+  deleteConversation: (conversationId: string) => Promise<void>;
 }
 
+/** React context consumed by chat pages, sidebar controls, and message composer UI. */
 export const ChatContext = createContext<ChatContextType | null>(null);
 
-export function ChatProvider({ children }: { children: ReactNode }) {
+/**
+ * Props accepted by the chat context provider.
+ */
+interface ChatProviderProps {
+  /** Descendant components that need access to chat state and actions. */
+  children: ReactNode;
+}
+
+/**
+ * Wraps authenticated routes with shared chat state and mutations.
+ *
+ * @param children - Route subtree that consumes the chat context.
+ * @returns The chat context provider element.
+ */
+export function ChatProvider({ children }: ChatProviderProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
-  const loadConversations = useCallback(() => {
-    setConversations(chatService.getConversations());
+  useEffect(() => {
+    // Clear any stale chat state when the app boots without an auth token.
+    const token = localStorage.getItem('aegis_token');
+    if (!token) {
+      setConversations([]);
+      setCurrentConversation(null);
+      setMessages([]);
+    }
+  }, []);
+
+  const loadConversations = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const conversationList = await chatService.getConversations();
+      setConversations(conversationList);
+      setCurrentConversation(null);
+      setMessages([]);
+    } catch {
+      setConversations([]);
+      setCurrentConversation(null);
+      setMessages([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const selectConversation = useCallback(async (conversation: Conversation) => {
@@ -60,6 +125,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       timestamp: new Date().toISOString(),
     };
 
+    // Add a placeholder assistant row immediately so streamed chunks render in place.
     setMessages(prev => [...prev, userMsg, assistantMsg]);
 
     try {
@@ -74,13 +140,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           );
         },
       );
-      // Update sidebar preview with final assistant content
-      setMessages(prev => {
-        const final = prev.find(m => m.id === assistantMsgId);
-        if (final) chatService.updateConversationPreview(currentConversation.id, final.content);
-        return prev;
-      });
-      setConversations(chatService.getConversations());
     } catch (err) {
       const errorContent = err instanceof Error ? err.message : 'Something went wrong';
       setMessages(prev =>
@@ -88,6 +147,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           m.id === assistantMsgId ? { ...m, content: `Error: ${errorContent}` } : m,
         ),
       );
+      setIsSending(false);
+      return;
+    }
+
+    try {
+      const conversationList = await chatService.getConversations();
+      setConversations(conversationList);
+      const refreshedCurrentConversation = conversationList.find(
+        conversation => conversation.id === currentConversation.id,
+      );
+      if (refreshedCurrentConversation) {
+        setCurrentConversation(refreshedCurrentConversation);
+      }
     } finally {
       setIsSending(false);
     }
@@ -97,20 +169,37 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const conversation = await chatService.createConversation(title, provider, model);
-      setConversations(chatService.getConversations());
-      setCurrentConversation(conversation);
+      try {
+        const conversationList = await chatService.getConversations();
+        setConversations(conversationList);
+        setCurrentConversation(
+          conversationList.find(item => item.id === conversation.id) ?? conversation,
+        );
+      } catch {
+        setConversations(prev => [conversation, ...prev.filter(item => item.id !== conversation.id)]);
+        setCurrentConversation(conversation);
+      }
       setMessages([]);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const deleteConversation = useCallback((conversationId: string) => {
-    chatService.deleteConversation(conversationId);
-    setConversations(chatService.getConversations());
-    if (currentConversation?.id === conversationId) {
-      setCurrentConversation(null);
-      setMessages([]);
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    try {
+      await chatService.deleteConversation(conversationId);
+      try {
+        const conversationList = await chatService.getConversations();
+        setConversations(conversationList);
+      } catch {
+        setConversations(prev => prev.filter(conversation => conversation.id !== conversationId));
+      }
+      if (currentConversation?.id === conversationId) {
+        setCurrentConversation(null);
+        setMessages([]);
+      }
+    } catch {
+      // Keep the current sidebar state when the delete request fails.
     }
   }, [currentConversation]);
 

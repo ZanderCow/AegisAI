@@ -55,13 +55,6 @@ class Settings(BaseSettings):
             "comma-separated string or JSON array."
         ),
     )
-    AUTO_CREATE_TABLES: bool | None = Field(
-        default=None,
-        description=(
-            "When true, create SQL tables automatically on application startup. "
-            "Defaults to enabled outside production and disabled in production."
-        ),
-    )
     GROQ_API_KEY: str = Field(default="", description="Groq API key for LLM access.")
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key for LLM access.")
     DEEPSEEK_API_KEY: str = Field(default="", description="DeepSeek API key for LLM access.")
@@ -87,6 +80,20 @@ class Settings(BaseSettings):
     CHROMA_COLLECTION_NAME: str = Field(
         default="rag_documents",
         description="Collection name used for RAG document storage.",
+    )
+    MFA_ENABLED: bool = Field(
+        default=False,
+        description="When True, Duo MFA is required at login.",
+    )
+    DUO_CLIENT_ID: str = Field(default="", description="Duo application client ID.")
+    DUO_CLIENT_SECRET: str = Field(default="", description="Duo application client secret.")
+    DUO_API_HOST: str = Field(
+        default="",
+        description="Duo API hostname (e.g. api-XXXXXXXX.duosecurity.com).",
+    )
+    DUO_REDIRECT_URI: str = Field(
+        default="http://localhost:5173/auth/duo/callback",
+        description="URI Duo redirects to after authentication.",
     )
 
     @field_validator("DATABASE_URL", mode="before")
@@ -123,14 +130,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def apply_environment_defaults(self) -> "Settings":
-        """Apply environment-aware defaults after base field parsing.
-
-        Production should not mutate schema automatically during startup.
-        Development and testing keep the current convenient bootstrap behavior
-        unless explicitly overridden with ``AUTO_CREATE_TABLES``.
-        """
-        if self.AUTO_CREATE_TABLES is None:
-            self.AUTO_CREATE_TABLES = self.ENVIRONMENT.lower() != "production"
+        if self.MFA_ENABLED:
+            missing = [
+                name for name, value in {
+                    "DUO_CLIENT_ID": self.DUO_CLIENT_ID,
+                    "DUO_CLIENT_SECRET": self.DUO_CLIENT_SECRET,
+                    "DUO_API_HOST": self.DUO_API_HOST,
+                    "DUO_REDIRECT_URI": self.DUO_REDIRECT_URI,
+                }.items()
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    f"MFA_ENABLED=true requires the following environment variables "
+                    f"to be set: {', '.join(missing)}"
+                )
 
         return self
 

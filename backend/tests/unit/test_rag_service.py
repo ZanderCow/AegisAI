@@ -33,7 +33,7 @@ async def test_rag_service_lists_documents_from_collection_metadata() -> None:
     ]
     chroma.get_collection.assert_awaited_once()
     collection.get.assert_awaited_once_with(
-        where={"user_id": "user-123"},
+        where={"doc_id": {"$ne": ""}},
         include=["metadatas"],
     )
 
@@ -48,5 +48,5 @@ async def test_get_context_returns_none_when_chroma_is_unavailable() -> None:
 
     rag = RAGService(chroma=chroma)
 
-    assert await rag.get_context("user-123", "what is in my document?") is None
+    assert await rag.get_context(["doc-1", "doc-2"], "what is in my document?") is None
     chroma.reset.assert_called_once()

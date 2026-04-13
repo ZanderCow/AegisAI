@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-auth_db}
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -43,13 +41,41 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-    ports:
-      - "8000:8000"
+      MFA_ENABLED: "false"
+      SEED_HIGHER_TIER_USERS: ${SEED_HIGHER_TIER_USERS:-true}
+      admin_user_username: ${admin_user_username}
+      admin_user_password: ${admin_user_password}
+      security_username: ${security_username}
+      security_password: ${security_password}
+    command:
+      [
+        "bash",
+        "scripts/start-backend.sh",
+        "uv",
+        "run",
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
     depends_on:
       db:
         condition: service_healthy
       chroma:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   frontend:
     build:
@@ -59,8 +85,6 @@ services:
     environment:
       # Frontend runtime setting used inside the containerized browser flow.
       VITE_API_URL: ${E2E_VITE_API_URL:-http://backend:8000}
-    ports:
-      - "5173:5173"
     depends_on:
       - backend
 
@@ -73,16 +97,22 @@ services:
       # Playwright runner endpoints.
       FRONTEND_URL: ${FRONTEND_URL:-http://frontend:5173}
       BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
-      # Provider credentials forwarded to the E2E runner.
+      admin_user_username: ${admin_user_username}
+      admin_user_password: ${admin_user_password}
+      security_username: ${security_username}
+      security_password: ${security_password}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       # Optional Playwright test selection overrides.
+      CI: ${CI:-}
       E2E_PROVIDER: ${E2E_PROVIDER:-}
       E2E_MODEL: ${E2E_MODEL:-}
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
     command: ["sh", "-c", "npm ci && echo 'Waiting for frontend...' && while ! curl -s http://frontend:5173 > /dev/null; do sleep 2; done && npx playwright test"]
 
 volumes:
