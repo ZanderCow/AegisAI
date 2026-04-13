@@ -9,10 +9,8 @@ import { ForbiddenPage } from '@/pages/ForbiddenPage';
 import { ChatPage } from '@/pages/chat/ChatPage';
 import { RagDocumentsPage } from '@/pages/rag/RagDocumentsPage';
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
-import { RoleManagementPage } from '@/pages/admin/RoleManagementPage';
 import { UserManagementPage } from '@/pages/admin/UserManagementPage';
 import { DocumentManagementPage } from '@/pages/admin/DocumentManagementPage';
-import { SecurityPage } from '@/pages/admin/SecurityPage';
 import { SecurityDashboardPage } from '@/pages/security/SecurityDashboardPage';
 import { FlaggingDashboardPage } from '@/pages/security/FlaggingDashboardPage';
 import { SecurityDocumentsPage } from '@/pages/security/SecurityDocumentsPage';
@@ -42,14 +40,12 @@ export function AppRouter() {
           {/* Admin routes */}
           <Route element={<RoleGuard allowedRoles={['admin']} />}>
             <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
-            <Route path="/admin/roles" element={<RoleManagementPage />} />
             <Route path="/admin/users" element={<UserManagementPage />} />
             <Route path="/admin/documents" element={<DocumentManagementPage />} />
           </Route>
 
           {/* Shared security/admin routes */}
           <Route element={<RoleGuard allowedRoles={['admin', 'security']} />}>
-            <Route path="/admin/security" element={<SecurityPage />} />
             <Route path="/security/documents" element={<SecurityDocumentsPage />} />
           </Route>
 

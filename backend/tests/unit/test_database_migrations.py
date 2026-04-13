@@ -5,6 +5,8 @@ import pytest
 
 import src.core.database_migrations as database_migrations
 
+CURRENT_REVISION = "20260413_000002"
+
 
 def test_build_alembic_config_converts_async_database_urls() -> None:
     """Verify runtime async URLs are converted for Alembic's sync engine."""
@@ -28,7 +30,7 @@ async def test_verify_database_schema_current_accepts_current_revision(
     fake_connection = Mock()
     fake_connection.run_sync = AsyncMock(
         return_value=(
-            "20260413_000001",
+            CURRENT_REVISION,
             set(database_migrations.EXPECTED_TABLE_NAMES),
         )
     )
@@ -38,7 +40,7 @@ async def test_verify_database_schema_current_accepts_current_revision(
     fake_engine.connect.return_value = fake_context_manager
 
     fake_script_directory = Mock()
-    fake_script_directory.get_current_head.return_value = "20260413_000001"
+    fake_script_directory.get_current_head.return_value = CURRENT_REVISION
 
     monkeypatch.setattr(
         database_migrations,
@@ -71,7 +73,7 @@ async def test_verify_database_schema_current_rejects_missing_revision(
     fake_engine.connect.return_value = fake_context_manager
 
     fake_script_directory = Mock()
-    fake_script_directory.get_current_head.return_value = "20260413_000001"
+    fake_script_directory.get_current_head.return_value = CURRENT_REVISION
 
     monkeypatch.setattr(
         database_migrations,
@@ -99,7 +101,7 @@ async def test_verify_database_schema_current_rejects_missing_tables_at_head(
     fake_engine = Mock()
     fake_connection = Mock()
     fake_connection.run_sync = AsyncMock(
-        return_value=("20260413_000001", {"alembic_version"})
+        return_value=(CURRENT_REVISION, {"alembic_version"})
     )
     fake_context_manager = MagicMock()
     fake_context_manager.__aenter__ = AsyncMock(return_value=fake_connection)
@@ -107,7 +109,7 @@ async def test_verify_database_schema_current_rejects_missing_tables_at_head(
     fake_engine.connect.return_value = fake_context_manager
 
     fake_script_directory = Mock()
-    fake_script_directory.get_current_head.return_value = "20260413_000001"
+    fake_script_directory.get_current_head.return_value = CURRENT_REVISION
 
     monkeypatch.setattr(
         database_migrations,
@@ -142,7 +144,7 @@ def test_repair_stamped_but_incomplete_schema_repairs_empty_app_schema(
 
     fake_config = Mock()
     fake_script_directory = Mock()
-    fake_script_directory.get_current_head.return_value = "20260413_000001"
+    fake_script_directory.get_current_head.return_value = CURRENT_REVISION
     fake_upgrade = Mock()
 
     monkeypatch.setattr(database_migrations, "build_alembic_config", Mock(return_value=fake_config))
@@ -155,7 +157,7 @@ def test_repair_stamped_but_incomplete_schema_repairs_empty_app_schema(
     monkeypatch.setattr(
         database_migrations,
         "_read_schema_state",
-        Mock(return_value=("20260413_000001", {"alembic_version"})),
+        Mock(return_value=(CURRENT_REVISION, {"alembic_version"})),
     )
     monkeypatch.setattr(database_migrations.command, "upgrade", fake_upgrade)
 
@@ -184,7 +186,7 @@ def test_repair_stamped_but_incomplete_schema_refuses_partial_schema(
 
     fake_config = Mock()
     fake_script_directory = Mock()
-    fake_script_directory.get_current_head.return_value = "20260413_000001"
+    fake_script_directory.get_current_head.return_value = CURRENT_REVISION
     fake_upgrade = Mock()
 
     monkeypatch.setattr(database_migrations, "build_alembic_config", Mock(return_value=fake_config))
@@ -197,7 +199,7 @@ def test_repair_stamped_but_incomplete_schema_refuses_partial_schema(
     monkeypatch.setattr(
         database_migrations,
         "_read_schema_state",
-        Mock(return_value=("20260413_000001", {"alembic_version", "users"})),
+        Mock(return_value=(CURRENT_REVISION, {"alembic_version", "users"})),
     )
     monkeypatch.setattr(database_migrations.command, "upgrade", fake_upgrade)
 

@@ -11,6 +11,7 @@ from src.core.config import settings
 from src.core.database import engine
 from src.core.database_migrations import verify_database_schema_current
 from src.api.v1.endpoints import auth
+from src.api.v1.endpoints import admin
 from src.api.v1.endpoints import chat
 from src.api.v1.endpoints import rag
 from src.api.v1.endpoints import documents
@@ -78,6 +79,7 @@ def get_cors_middleware_kwargs() -> dict[str, object]:
 app.add_middleware(CORSMiddleware, **get_cors_middleware_kwargs())
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")

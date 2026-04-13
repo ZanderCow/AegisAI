@@ -30,7 +30,7 @@ class Conversation(Base):
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     display_id = Column(BigInteger, Identity(), unique=True, nullable=False)
     title = Column(String(255), nullable=False, default="New Chat")
-    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     provider = Column(String(50), nullable=False)
     model = Column(String(100), nullable=False)
     tokens_used = Column(BigInteger, nullable=False, default=0)
@@ -55,7 +55,7 @@ class Message(Base):
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     display_id = Column(BigInteger, Identity(), unique=True, nullable=False)
-    conversation_id = Column(Uuid(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
+    conversation_id = Column(Uuid(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     token_count = Column(Integer, nullable=True)
