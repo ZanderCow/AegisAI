@@ -56,8 +56,8 @@ test.describe('Role: user', () => {
     await createAndLoginUser(page, request, 'roles-user-nav');
     await page.goto('/chat');
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).not.toBeVisible();
-    await expect(page.getByRole('link', { name: 'Security Logs' })).not.toBeVisible();
     await expect(page.getByRole('link', { name: 'Security Dashboard' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Flagging Dashboard' })).not.toBeVisible();
     await expect(page.getByRole('link', { name: 'Document Access' })).not.toBeVisible();
   });
 });
@@ -83,10 +83,10 @@ test.describe('Role: admin', () => {
     await expect(page).toHaveURL(/\/admin\/dashboard$/);
   });
 
-  test('can access /admin/roles', async ({ page }) => {
+  test('can access /admin/documents', async ({ page }) => {
     await loginAsSeededRole(page, 'admin');
-    await page.goto('/admin/roles');
-    await expect(page).toHaveURL(/\/admin\/roles$/);
+    await page.goto('/admin/documents');
+    await expect(page).toHaveURL(/\/admin\/documents$/);
   });
 
   test('can access /admin/users', async ({ page }) => {
@@ -113,10 +113,10 @@ test.describe('Role: admin', () => {
     await expect(page.getByRole('link', { name: 'Chat' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'RAG Documents' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Roles' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Users' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Security Logs' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Documents', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Security Dashboard' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Flagging Dashboard' })).not.toBeVisible();
     await expect(page.getByRole('link', { name: 'Document Access' })).toBeVisible();
   });
 });
@@ -157,8 +157,9 @@ test.describe('Role: security', () => {
   test('sidebar shows security items', async ({ page }) => {
     await loginAsSeededRole(page, 'security');
     await page.goto('/security/dashboard');
-    await expect(page.getByRole('link', { name: 'Security Logs' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'RAG Documents' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Security Dashboard' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Flagging Dashboard' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Document Access' })).toBeVisible();
   });
 
@@ -167,7 +168,7 @@ test.describe('Role: security', () => {
     await page.goto('/security/dashboard');
     await expect(page.getByRole('link', { name: 'Chat' })).not.toBeVisible();
     await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).not.toBeVisible();
-    await expect(page.getByRole('link', { name: 'Roles' })).not.toBeVisible();
     await expect(page.getByRole('link', { name: 'Users' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: 'Documents', exact: true })).not.toBeVisible();
   });
 });

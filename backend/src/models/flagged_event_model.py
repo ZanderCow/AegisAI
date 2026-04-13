@@ -27,8 +27,8 @@ class Alarm(Base):
     __tablename__ = "alarm"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    conversation_id = Column(Uuid(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(Uuid(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     message_content = Column(Text, nullable=False)
     filter_type = Column(String(20), nullable=False)
     provider = Column(String(50), nullable=False)

@@ -37,7 +37,7 @@ class Document(Base):
     filename = Column(String(255), nullable=False)
     file_size = Column(BigInteger, nullable=False, default=0)
     status = Column(String(50), nullable=False, default="active")
-    uploaded_by = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    uploaded_by = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     allowed_roles = Column(ARRAY(String), nullable=False, default=list)
     chroma_doc_id = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)

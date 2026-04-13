@@ -4,6 +4,8 @@ This module encapsulates the core business rules for user registration
 and login, coordinating between validation schemas, security utilities,
 and the database repository.
 """
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from src.schemas.auth_schema import SignupRequest, LoginRequest, TokenResponse, DuoLoginResponse, DuoCallbackRequest
 from src.repo.user_repo import UserRepository
@@ -24,6 +26,13 @@ class AuthService:
     def __init__(self, repo: UserRepository):
         """Initializes the service with a database repository instance."""
         self.repo = repo
+
+    async def _update_last_login_safe(self, user_id: str) -> None:
+        """Best-effort last-login tracking that does not mask auth success."""
+        try:
+            await self.repo.update_last_login(user_id, datetime.now(timezone.utc))
+        except ValueError:
+            logger.warning("Skipping last_login update for non-UUID user id: %s", user_id)
 
     async def signup(self, request: SignupRequest) -> TokenResponse:
         """Orchestrates the creation of a new user account.
@@ -85,6 +94,7 @@ class AuthService:
             )
         if not settings.MFA_ENABLED:
             logger.info(f"MFA disabled — issuing token directly for user: {user.id}")
+            await self._update_last_login_safe(str(user.id))
             token = create_token({"sub": str(user.id), "email": user.email, "role": user.role})
             return TokenResponse(access_token=token, token_type="bearer")
 
@@ -159,5 +169,6 @@ class AuthService:
         token_payload = {"sub": user_id, "email": username}
         if payload.get("role"):
             token_payload["role"] = payload["role"]
+        await self._update_last_login_safe(user_id)
         token = create_token(token_payload)
         return TokenResponse(access_token=token, token_type="bearer")

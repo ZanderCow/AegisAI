@@ -22,14 +22,18 @@ class User(Base):
         id (uuid.UUID): The primary UUID key for the user.
         email (str): The unique, indexed email address used for login.
         hashed_password (str): The heavily salted, securely hashed password.
+        full_name (str | None): The user's display name for admin-facing views.
         role (str): The user's role (user, admin, security).
+        last_login (datetime | None): The timestamp of the user's most recent login.
     """
     __tablename__ = "users"
 
     id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     email = Column(String(320), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
     role = Column(String(50), nullable=False, default=ROLE_USER)
+    last_login = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
