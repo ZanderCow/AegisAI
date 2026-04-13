@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from pathlib import Path
 
+from alembic.autogenerate import compare_metadata
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
@@ -41,6 +42,63 @@ def _format_table_names(table_names: Collection[str]) -> str:
     if not table_names:
         return "(none)"
     return ", ".join(sorted(table_names))
+
+
+def _read_schema_differences(sync_connection: object) -> list[object]:
+    """Return Alembic autogenerate diffs between the database and ORM metadata."""
+    migration_context = MigrationContext.configure(
+        sync_connection,
+        opts={
+            "target_metadata": metadata,
+            "compare_type": True,
+        },
+    )
+    return compare_metadata(migration_context, metadata)
+
+
+def repair_unstamped_but_current_schema(database_url: str) -> bool:
+    """Stamp head when an existing schema already matches the current metadata.
+
+    This handles environments that were bootstrapped before Alembic-managed
+    startup but already contain all application tables. The helper is narrow on
+    purpose: it only auto-stamps when every expected table exists and Alembic's
+    autogenerate diff reports no remaining schema changes.
+    """
+    config = build_alembic_config(database_url)
+    sync_engine = create_engine(to_sync_database_url(database_url))
+
+    try:
+        with sync_engine.begin() as connection:
+            current_revision, table_names = _read_schema_state(connection)
+            present_app_tables = table_names & EXPECTED_TABLE_NAMES
+            missing_tables = EXPECTED_TABLE_NAMES - table_names
+
+            if current_revision is not None or not present_app_tables:
+                return False
+
+            if missing_tables:
+                raise RuntimeError(
+                    "Database schema is partially initialized without an Alembic "
+                    "revision stamp. "
+                    f"Present app tables: {_format_table_names(present_app_tables)}. "
+                    f"Missing app tables: {_format_table_names(missing_tables)}. "
+                    "Automatic repair was skipped because the database does not "
+                    "match a fully initialized schema."
+                )
+
+            schema_differences = _read_schema_differences(connection)
+            if schema_differences:
+                raise RuntimeError(
+                    "Database schema contains all expected tables but does not "
+                    "match the current ORM metadata, and Alembic has no revision "
+                    "stamp to anchor an upgrade path. Automatic stamping was "
+                    f"skipped. Pending schema differences: {schema_differences!r}."
+                )
+
+        command.stamp(config, "head")
+        return True
+    finally:
+        sync_engine.dispose()
 
 
 def repair_stamped_but_incomplete_schema(database_url: str) -> bool:

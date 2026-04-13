@@ -211,3 +211,109 @@ def test_repair_stamped_but_incomplete_schema_refuses_partial_schema(
     fake_connection.exec_driver_sql.assert_not_called()
     fake_upgrade.assert_not_called()
     fake_engine.dispose.assert_called_once()
+
+
+def test_repair_unstamped_but_current_schema_stamps_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify fully initialized unstamped schemas are stamped at head."""
+    fake_connection = Mock()
+    fake_context_manager = MagicMock()
+    fake_context_manager.__enter__ = Mock(return_value=fake_connection)
+    fake_context_manager.__exit__ = Mock(return_value=None)
+
+    fake_engine = Mock()
+    fake_engine.begin.return_value = fake_context_manager
+    fake_engine.dispose = Mock()
+
+    fake_config = Mock()
+    fake_stamp = Mock()
+
+    monkeypatch.setattr(database_migrations, "build_alembic_config", Mock(return_value=fake_config))
+    monkeypatch.setattr(database_migrations, "create_engine", Mock(return_value=fake_engine))
+    monkeypatch.setattr(
+        database_migrations,
+        "_read_schema_state",
+        Mock(return_value=(None, set(database_migrations.EXPECTED_TABLE_NAMES))),
+    )
+    monkeypatch.setattr(
+        database_migrations,
+        "_read_schema_differences",
+        Mock(return_value=[]),
+    )
+    monkeypatch.setattr(database_migrations.command, "stamp", fake_stamp)
+
+    repaired = database_migrations.repair_unstamped_but_current_schema(
+        "postgresql+asyncpg://user:pass@localhost:5432/auth_db",
+    )
+
+    assert repaired is True
+    fake_stamp.assert_called_once_with(fake_config, "head")
+    fake_engine.dispose.assert_called_once()
+
+
+def test_repair_unstamped_but_current_schema_refuses_partial_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify partially initialized unstamped schemas are not auto-stamped."""
+    fake_connection = Mock()
+    fake_context_manager = MagicMock()
+    fake_context_manager.__enter__ = Mock(return_value=fake_connection)
+    fake_context_manager.__exit__ = Mock(return_value=None)
+
+    fake_engine = Mock()
+    fake_engine.begin.return_value = fake_context_manager
+    fake_engine.dispose = Mock()
+
+    monkeypatch.setattr(database_migrations, "build_alembic_config", Mock(return_value=Mock()))
+    monkeypatch.setattr(database_migrations, "create_engine", Mock(return_value=fake_engine))
+    monkeypatch.setattr(
+        database_migrations,
+        "_read_schema_state",
+        Mock(return_value=(None, {"users"})),
+    )
+    monkeypatch.setattr(database_migrations.command, "stamp", Mock())
+
+    with pytest.raises(RuntimeError, match="partially initialized without an Alembic revision stamp"):
+        database_migrations.repair_unstamped_but_current_schema(
+            "postgresql+asyncpg://user:pass@localhost:5432/auth_db",
+        )
+
+    database_migrations.command.stamp.assert_not_called()
+    fake_engine.dispose.assert_called_once()
+
+
+def test_repair_unstamped_but_current_schema_refuses_schema_with_pending_diffs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify auto-stamping is skipped when the unstamped schema differs from metadata."""
+    fake_connection = Mock()
+    fake_context_manager = MagicMock()
+    fake_context_manager.__enter__ = Mock(return_value=fake_connection)
+    fake_context_manager.__exit__ = Mock(return_value=None)
+
+    fake_engine = Mock()
+    fake_engine.begin.return_value = fake_context_manager
+    fake_engine.dispose = Mock()
+
+    monkeypatch.setattr(database_migrations, "build_alembic_config", Mock(return_value=Mock()))
+    monkeypatch.setattr(database_migrations, "create_engine", Mock(return_value=fake_engine))
+    monkeypatch.setattr(
+        database_migrations,
+        "_read_schema_state",
+        Mock(return_value=(None, set(database_migrations.EXPECTED_TABLE_NAMES))),
+    )
+    monkeypatch.setattr(
+        database_migrations,
+        "_read_schema_differences",
+        Mock(return_value=[("add_column", None, "users", "full_name")]),
+    )
+    monkeypatch.setattr(database_migrations.command, "stamp", Mock())
+
+    with pytest.raises(RuntimeError, match="does not match the current ORM metadata"):
+        database_migrations.repair_unstamped_but_current_schema(
+            "postgresql+asyncpg://user:pass@localhost:5432/auth_db",
+        )
+
+    database_migrations.command.stamp.assert_not_called()
+    fake_engine.dispose.assert_called_once()

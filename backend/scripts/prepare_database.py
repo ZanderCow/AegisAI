@@ -21,6 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.core.database_migrations import (
     build_alembic_config,
     repair_stamped_but_incomplete_schema,
+    repair_unstamped_but_current_schema,
     verify_database_schema_current,
 )
 from src.core.database_urls import load_database_url
@@ -35,14 +36,22 @@ if not logger.handlers:
 
 
 async def async_main() -> int:
-    """Apply migrations and repair the known stamped-but-empty failure mode."""
+    """Apply migrations and repair the known pre-Alembic bootstrap failure modes."""
     database_url = load_database_url()
     config = build_alembic_config(database_url)
     engine = create_async_engine(database_url, echo=False)
 
     try:
         logger.info("Applying Alembic migrations.")
-        command.upgrade(config, "head")
+        repaired_unstamped_schema = repair_unstamped_but_current_schema(database_url)
+        if repaired_unstamped_schema:
+            logger.warning(
+                "Detected an existing database schema without an Alembic revision "
+                "stamp. Verified the schema matches the current metadata and "
+                "stamped the database at the current head revision."
+            )
+        else:
+            command.upgrade(config, "head")
 
         try:
             await verify_database_schema_current(engine, database_url)
