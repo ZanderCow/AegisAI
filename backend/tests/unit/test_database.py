@@ -12,7 +12,7 @@ from pytest import MonkeyPatch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.core.database as database
-from src.core.database_urls import to_sync_database_url
+from src.core.database_urls import load_database_url, to_sync_database_url
 from src.core.config import settings
 
 
@@ -48,6 +48,30 @@ def test_to_sync_database_url_normalizes_postgres_scheme() -> None:
         to_sync_database_url("postgres://user:pass@localhost:5432/auth_db")
         == "postgresql+psycopg2://user:pass@localhost:5432/auth_db"
     )
+
+
+@pytest.mark.parametrize(
+    ("raw_url", "expected_url"),
+    [
+        (
+            "postgresql://user:pass@db.railway.internal:5432/auth_db",
+            "postgresql+asyncpg://user:pass@db.railway.internal:5432/auth_db",
+        ),
+        (
+            "postgres://user:pass@db.railway.internal:5432/auth_db",
+            "postgresql+asyncpg://user:pass@db.railway.internal:5432/auth_db",
+        ),
+    ],
+)
+def test_load_database_url_normalizes_standard_postgres_urls(
+    monkeypatch: MonkeyPatch,
+    raw_url: str,
+    expected_url: str,
+) -> None:
+    """Verify raw Railway/Postgres env URLs are normalized for async startup."""
+    monkeypatch.setenv("DATABASE_URL", raw_url)
+
+    assert load_database_url() == expected_url
 
 
 @pytest.mark.asyncio

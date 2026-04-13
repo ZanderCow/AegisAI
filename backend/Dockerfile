@@ -28,5 +28,5 @@ RUN uv sync --locked --no-dev
 COPY . .
 # Expose the port
 EXPOSE 8000
-# Run uvicorn without hot-reload for maximum performance
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Prepare the database before starting the API process and honor Railway's PORT.
+CMD ["bash", "-lc", "bash scripts/start-backend.sh uv run uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -11,6 +11,8 @@ from typing import Annotated
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from src.core.database_urls import normalize_async_database_url
+
 _DEFAULT_CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -102,14 +104,7 @@ class Settings(BaseSettings):
         """Normalize Railway-style PostgreSQL URLs to the asyncpg dialect."""
         if not isinstance(value, str):
             return value
-
-        if value.startswith("postgresql://"):
-            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-        if value.startswith("postgres://"):
-            return value.replace("postgres://", "postgresql+asyncpg://", 1)
-
-        return value
+        return normalize_async_database_url(value)
 
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod
