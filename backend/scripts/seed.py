@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.models.user_model import ROLE_ADMIN, ROLE_SECURITY
+from src.core.database_urls import normalize_async_database_url
 from src.service.seed_service import SeedService, SeedUserRequest, SeedUserResult
 
 SEED_FLAG_ENV = "SEED_HIGHER_TIER_USERS"
@@ -85,7 +86,9 @@ async def async_main(env: Mapping[str, str] | None = None) -> int:
         return 0
 
     try:
-        database_url = require_env(active_env, DATABASE_URL_ENV)
+        database_url = normalize_async_database_url(
+            require_env(active_env, DATABASE_URL_ENV)
+        )
         build_seed_requests(active_env)
     except ValueError as exc:
         logger.error(str(exc))
