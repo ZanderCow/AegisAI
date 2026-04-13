@@ -6,7 +6,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/infra/docker-compose.e2e.yml"
 ENV_FILE="${REPO_ROOT}/infra/.env"
-COMPOSE_CMD=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+COMPOSE_CMD=(docker compose)
+
+if [[ -f "${ENV_FILE}" ]]; then
+  COMPOSE_CMD+=(--env-file "${ENV_FILE}")
+fi
+
+COMPOSE_CMD+=(-f "${COMPOSE_FILE}")
 
 export CI="${CI:-true}"
 
