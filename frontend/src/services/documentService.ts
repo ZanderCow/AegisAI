@@ -4,9 +4,8 @@
  * Replaces the previous in-memory mock. All operations hit the backend and
  * are subject to role-based access control enforced server-side.
  */
+import { API_URL } from '@/config/api';
 import type { Document, UserRole } from '@/types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 function getToken(): string {
   return localStorage.getItem('aegis_token') || '';
