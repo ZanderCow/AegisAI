@@ -1,0 +1,56 @@
+@startuml
+top to bottom direction
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam padding 6
+skinparam shadowing false
+
+skinparam rectangle {
+    BackgroundColor<<Person>>   #1168BD
+    FontColor<<Person>>         white
+    BorderColor<<Person>>       #0D4F9E
+    BackgroundColor<<System>>   #1168BD
+    FontColor<<System>>         white
+    BorderColor<<System>>       #0D4F9E
+    BackgroundColor<<External>> #808080
+    FontColor<<External>>       white
+    BorderColor<<External>>     #5C5C5C
+    RoundCorner 6
+}
+skinparam arrow {
+    Color     #444444
+    FontColor #555555
+    FontSize  10
+}
+
+title <size:16><b>AegisAI — C4 System Context Diagram</b></size>
+
+rectangle "<&person,scale=2>\n<b>End User</b>\n\nInteracts with AI chat\nand views documents" <<Person>> as end_user
+rectangle "<&person,scale=2>\n<b>Administrator</b>\n\nManages users, uploads\ndocuments, monitors system" <<Person>> as admin
+rectangle "<&person,scale=2>\n<b>Security Analyst</b>\n\nMonitors chat history\nand moderation flags" <<Person>> as security
+
+rectangle "<b>AegisAI</b>\n<i>[Software System]</i>\n\nSecure AI chat platform with RAG,\nrole-based access control,\ncontent moderation, and MFA" <<System>> as aegisai
+
+rectangle "<b>Groq API</b>\n<i>[External System]</i>\n\nLLM provider\n(OpenAI-compatible\nstreaming API)" <<External>> as groq
+rectangle "<b>Google Gemini API</b>\n<i>[External System]</i>\n\nAlternative LLM\nprovider (Google Cloud)" <<External>> as gemini
+rectangle "<b>DeepSeek API</b>\n<i>[External System]</i>\n\nAlternative LLM\nprovider" <<External>> as deepseek
+rectangle "<b>Duo Security</b>\n<i>[External System]</i>\n\nMFA via Universal\nPrompt flow" <<External>> as duo
+
+end_user  --> aegisai : "Chats with AI, views documents"
+admin     --> aegisai : "Manages users, uploads PDFs"
+security  --> aegisai : "Views chat histories and alerts"
+
+aegisai --> groq     : "Streams chat completions"
+aegisai --> gemini   : "Streams chat completions"
+aegisai --> deepseek : "Streams chat completions"
+aegisai --> duo      : "Delegates MFA challenge and verification"
+
+legend bottom right
+    <b>Legend</b>
+    |= Symbol |= Description |
+    |<back:#1168BD><color:white>   Person / System   </color></back>| Internal actor or AegisAI system |
+    |<back:#808080><color:white>   External          </color></back>| External system or provider |
+    |<back:#FFFFFF><color:#555555>→ Solid arrow      </color></back>| Interaction or data flow |
+endlegend
+
+@enduml

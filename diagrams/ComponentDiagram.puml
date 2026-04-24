@@ -1,0 +1,128 @@
+@startuml ComponentDiagram
+top to bottom direction
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam padding 5
+skinparam shadowing false
+
+skinparam rectangle {
+    BackgroundColor<<Component>> #1168BD
+    FontColor<<Component>>       white
+    BorderColor<<Component>>     #0D4F9E
+    BackgroundColor<<External>>  #808080
+    FontColor<<External>>        white
+    BorderColor<<External>>      #5C5C5C
+    BackgroundColor<<DB>>        #1168BD
+    FontColor<<DB>>              white
+    BorderColor<<DB>>            #0D4F9E
+    RoundCorner 6
+}
+
+skinparam package<<Boundary>> {
+    BackgroundColor #F5F8FF
+    BorderColor     #555555
+    FontColor       #444444
+}
+
+skinparam package<<Layer>> {
+    BackgroundColor #EEF3F9
+    BorderColor     #0D4F9E
+    FontColor       #1168BD
+}
+
+skinparam arrow {
+    Color     #444444
+    FontColor #555555
+    FontSize  10
+}
+
+title <size:16><b>AegisAI — C4 Component Diagram (FastAPI Backend)</b></size>
+
+'─────────────── EXTERNAL ───────────────
+rectangle "<&person,scale=1.5>\n<b>React SPA</b>\n<i>[External Container]</i>\nBrowser frontend" <<External>> as frontend
+rectangle "<b>PostgreSQL 15</b>\n<i>[External · Relational DB]</i>" <<DB>> as postgres
+rectangle "<b>ChromaDB</b>\n<i>[External · Vector DB]</i>" <<DB>> as chroma
+rectangle "<b>Groq / Gemini / DeepSeek</b>\n<i>[External · LLM Providers]</i>" <<External>> as llm
+rectangle "<b>Duo Security</b>\n<i>[External · MFA Provider]</i>" <<External>> as duo
+
+'─────────────── SYSTEM BOUNDARY ───────────────
+package "FastAPI Backend  [System Boundary]" <<Boundary>> {
+
+    package "API Layer" <<Layer>> {
+        rectangle "<b>Auth Router</b>\n<i>[Component: FastAPI APIRouter]</i>\nPOST /auth/signup\nPOST /auth/login\nPOST /auth/duo/callback" <<Component>> as auth_router
+        rectangle "<b>Chat Router</b>\n<i>[Component: FastAPI APIRouter]</i>\nConversation CRUD\nSSE message streaming\nSecurity dashboard" <<Component>> as chat_router
+        rectangle "<b>Documents Router</b>\n<i>[Component: FastAPI APIRouter]</i>\nPDF upload\nMetadata CRUD\nRole-scoped listing" <<Component>> as doc_router
+        rectangle "<b>Admin Router</b>\n<i>[Component: FastAPI APIRouter]</i>\nUser listing\nDeletion and role updates" <<Component>> as admin_router
+    }
+
+    package "Service Layer" <<Layer>> {
+        rectangle "<b>AuthService</b>\n<i>[Component: Python class]</i>\nSignup, login, JWT issuance\nDuo MFA orchestration" <<Component>> as auth_svc
+        rectangle "<b>ChatService</b>\n<i>[Component: Python class]</i>\nSSE stream, moderation\nand RAG context enrichment" <<Component>> as chat_svc
+        rectangle "<b>DocumentService</b>\n<i>[Component: Python class]</i>\nTwo-phase commit:\nPostgres + ChromaDB" <<Component>> as doc_svc
+        rectangle "<b>RAGService</b>\n<i>[Component: Python class]</i>\nPDF chunking, ONNX\nembedding, vector search" <<Component>> as rag_svc
+    }
+
+    package "Repository Layer" <<Layer>> {
+        rectangle "<b>UserRepository</b>\n<i>[Component: SQLAlchemy async]</i>\nCRUD — users table" <<Component>> as user_repo
+        rectangle "<b>ConversationRepository</b>\n<i>[Component: SQLAlchemy async]</i>\nCRUD — conversations\nand messages tables" <<Component>> as conv_repo
+        rectangle "<b>DocumentRepository</b>\n<i>[Component: SQLAlchemy async]</i>\nCRUD — documents table" <<Component>> as doc_repo
+        rectangle "<b>FlaggedEventRepository</b>\n<i>[Component: SQLAlchemy async]</i>\nInsert / query alarm events" <<Component>> as alarm_repo
+    }
+
+    package "Security & Infra" <<Layer>> {
+        rectangle "<b>JWT Manager</b>\n<i>[Component: python-jose]</i>\nToken creation, validation\nUser identity extraction" <<Component>> as jwt
+        rectangle "<b>Password Hasher</b>\n<i>[Component: passlib / bcrypt]</i>\nHash and verify passwords" <<Component>> as pwd
+        rectangle "<b>Duo Client</b>\n<i>[Component: duo-universal-sdk]</i>\nBuild auth URL\nVerify auth code" <<Component>> as duo_client
+        rectangle "<b>Content Policy Filter</b>\n<i>[Component: Regex matcher]</i>\nDetects harmful keywords\nbefore each LLM call" <<Component>> as kw_filter
+        rectangle "<b>Provider Dispatcher</b>\n<i>[Component: Python module]</i>\nRoutes to Groq, Gemini\nor DeepSeek by config" <<Component>> as dispatch
+        rectangle "<b>ChromaManager</b>\n<i>[Component: chromadb-client]</i>\nLazy singleton HTTP\nclient for ChromaDB" <<Component>> as chroma_mgr
+    }
+}
+
+'─────────────── RELATIONSHIPS ───────────────
+frontend --> auth_router
+frontend --> chat_router
+frontend --> doc_router
+frontend --> admin_router
+
+auth_router  --> auth_svc
+chat_router  --> chat_svc
+doc_router   --> doc_svc
+admin_router --> auth_svc
+
+auth_svc --> user_repo
+auth_svc --> jwt
+auth_svc --> pwd
+auth_svc --> duo_client
+
+chat_svc --> conv_repo
+chat_svc --> doc_repo
+chat_svc --> alarm_repo
+chat_svc --> kw_filter
+chat_svc --> rag_svc
+chat_svc --> dispatch
+
+doc_svc  --> doc_repo
+doc_svc  --> rag_svc
+rag_svc  --> chroma_mgr
+
+user_repo  --> postgres
+conv_repo  --> postgres
+doc_repo   --> postgres
+alarm_repo --> postgres
+chroma_mgr --> chroma
+dispatch   --> llm
+duo_client --> duo
+
+'─────────────── LEGEND ───────────────
+legend bottom right
+    <b>Legend</b>
+    |= Symbol |= Description |
+    |<back:#1168BD><color:white>   Component   </color></back>| Internal backend component |
+    |<back:#808080><color:white>   External    </color></back>| External system or container |
+    |<back:#EEF3F9><color:#1168BD>   Layer pkg  </color></back>| Logical layer grouping |
+    |<back:#F5F8FF><color:#444444>   Boundary   </color></back>| System boundary |
+    |<back:#FFFFFF><color:#555555>→ Arrow       </color></back>| Dependency or call |
+endlegend
+
+@enduml

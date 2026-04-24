@@ -1,0 +1,92 @@
+@startuml
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+skinparam sequence {
+    ArrowColor              #444444
+    ArrowFontColor          #555555
+    ArrowFontSize           10
+    ParticipantBorderColor  #0D4F9E
+    ParticipantBackgroundColor #1168BD
+    ParticipantFontColor    white
+    ParticipantFontSize     11
+    LifeLineBorderColor     #0D4F9E
+    BoxBorderColor          #0D4F9E
+    BoxBackgroundColor      #EEF3F9
+    GroupBorderColor        #555555
+    GroupFontColor          #222222
+    GroupBodyBackgroundColor #FAFAFA
+}
+
+skinparam actor {
+    BackgroundColor #1168BD
+    BorderColor     #0D4F9E
+    FontColor       white
+}
+
+title <size:16><b>AegisAI — Dynamic Diagram (SSE Chat Message Flow)</b></size>
+
+actor       "End User"                                    as user
+participant "React SPA\n<i>[Frontend]</i>"                as spa
+participant "Chat Router\n<i>[API Layer]</i>"             as router
+participant "Content Policy\nFilter\n<i>[Moderation]</i>" as filter
+participant "RAG Service\n<i>[Service Layer]</i>"         as rag
+participant "ChromaDB\n<i>[External · Vector Store]</i>"  as chroma   #808080
+participant "Provider\nDispatcher\n<i>[Infra]</i>"        as dispatch
+participant "LLM Provider\n<i>[External]</i>"             as llm      #808080
+participant "Conversation\nRepository\n<i>[Repo Layer]</i>" as repo
+participant "FlaggedEvent\nRepository\n<i>[Repo Layer]</i>" as alarm_repo
+
+user   -> spa    : types and submits message
+spa    -> router : POST /chat/conversations/{id}/messages/send\n{content: "..."} · Authorization: Bearer <JWT>
+router -> router : validate JWT · extract user_id
+router -> repo   : verify conversation ownership
+router -> filter : is_harmful(message)
+
+alt <color:#CC0000><b>HARMFUL</b> — keyword match detected</color>
+    filter     --> router     : true
+    router     ->  alarm_repo : create_alarm(\n  user_id, conv_id, message, filter_type="keyword")
+    router     --> spa        : SSE: {"content": "That's Dangerous", "done": true}
+    spa        --> user       : <color:#CC0000>shows moderation block</color>
+
+else <color:#007700><b>SAFE</b> — message passes moderation</color>
+    filter --> router : false
+
+    router -> repo : list allowed document IDs for user's role
+    router -> rag  : retrieve(query=message, allowed_doc_ids)
+    rag    -> rag  : embed query locally\n(all-MiniLM-L6-v2 · ONNX · thread pool)
+    rag    -> chroma : query(embedding,\nwhere: {doc_id: {$in: allowed_ids}})
+    chroma --> rag : top-k relevant text chunks
+    rag    --> router : context_chunks[]
+
+    router   -> dispatch : stream_from_provider(\n  provider, messages + context, model, api_key)
+    dispatch -> llm      : POST /chat/completions\nAccept: text/event-stream  [HTTPS]
+
+    loop <color:#0D4F9E><b>SSE token stream</b></color>
+        llm      --> dispatch : data: {"delta": {"content": "token"}}
+        dispatch --> router   : yield token
+        router   --> spa      : data: {"content": "token", "done": false}
+        spa      --> user     : appends token to bubble in real-time
+    end
+
+    llm --> dispatch : [DONE]
+
+    router -> repo : INSERT message (role=user, content)
+    router -> repo : INSERT message (role=assistant, full_response)
+    router -> repo : UPDATE conversation (tokens_used, updated_at)
+    router --> spa : data: {"content": "", "done": true}
+    spa    --> user : message complete · input re-enabled
+end
+
+legend bottom right
+    <b>Legend</b>
+    |= Symbol |= Description |
+    |<back:#1168BD><color:white>   Participant   </color></back>| Internal AegisAI component |
+    |<back:#808080><color:white>   Participant   </color></back>| External system |
+    |<back:#FFFFFF><color:#444444>→ Solid arrow  </color></back>| Synchronous call or data push |
+    |<back:#FFFFFF><color:#444444>alt / else     </color></back>| Conditional branch |
+    |<back:#FFFFFF><color:#444444>loop           </color></back>| Repeating SSE token delivery |
+endlegend
+
+@enduml

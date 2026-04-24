@@ -1,0 +1,90 @@
+@startuml ContainerView
+top to bottom direction
+skinparam defaultFontName Arial
+skinparam defaultFontSize 24
+skinparam padding 6
+skinparam shadowing false
+
+skinparam rectangle {
+    BackgroundColor<<Person>>    #1168BD
+    FontColor<<Person>>          white
+    BorderColor<<Person>>        #0D4F9E
+    BackgroundColor<<Container>> #1168BD
+    FontColor<<Container>>       white
+    BorderColor<<Container>>     #0D4F9E
+    BackgroundColor<<External>>  #808080
+    FontColor<<External>>        white
+    BorderColor<<External>>      #5C5C5C
+    RoundCorner 6
+}
+
+skinparam package {
+    BackgroundColor #F5F8FF
+    BorderColor     #555555
+    FontColor       #444444
+}
+
+skinparam arrow {
+    Color     #444444
+    FontColor #555555
+    FontSize  24
+}
+
+skinparam legend {
+    FontSize        24
+
+}
+
+title <size:32><b>AegisAI — C4 Container View</b></size>
+
+'─────────────── PERSONS ───────────────
+rectangle "<&person,scale=2>\n<b>Admin</b>\nManages users, uploads\ndocuments, monitors system" <<Person>> as admin
+rectangle "<&person,scale=2>\n<b>User</b>\nInteracts with AI chat\nand views documents" <<Person>> as user
+rectangle "<&person,scale=2>\n<b>Security Analyst</b>\nMonitors chat history\nand moderation flags" <<Person>> as security
+
+'─────────────── SYSTEM BOUNDARY ───────────────
+package "AegisAI  [System]" {
+    rectangle "<b>Frontend</b>\n<i>[Container: React 19 + TypeScript + Vite]</i>\n\nBrowser SPA — Chat interface,\ndocument viewer, admin dashboard,\nand security monitoring views" <<Container>> as frontend
+
+    rectangle "<b>Backend API</b>\n<i>[Container: FastAPI · Python 3.11 · Uvicorn]</i>\n\nHandles authentication, SSE chat streaming,\nRAG document pipeline, user administration,\ncontent moderation, and role-based access" <<Container>> as backend
+
+    rectangle "<b>Relational Database</b>\n<i>[Container: PostgreSQL 15]</i>\n\nPersists users, conversations, messages,\ndocument metadata, and moderation alarms" <<Container>> as pg
+
+    rectangle "<b>Vector Store</b>\n<i>[Container: ChromaDB 1.5.5]</i>\n\nStores and queries document chunk\nembeddings for RAG semantic retrieval\n(cosine similarity, all-MiniLM-L6-v2)" <<Container>> as chroma
+}
+
+'─────────────── EXTERNAL SYSTEMS ───────────────
+rectangle "<b>Groq API</b>\n<i>[External System]</i>\n\nLLM provider\nOpenAI-compatible\nstreaming API" <<External>> as groq
+
+rectangle "<b>Google Gemini API</b>\n<i>[External System]</i>\n\nAlternative LLM\nprovider (Google\nCloud)" <<External>> as gemini
+
+rectangle "<b>DeepSeek API</b>\n<i>[External System]</i>\n\nAlternative LLM\nprovider" <<External>> as deepseek
+
+rectangle "<b>Duo Security</b>\n<i>[External System]</i>\n\nMFA via Universal\nPrompt — challenge\nand verification" <<External>> as duo
+
+'─────────────── RELATIONSHIPS ───────────────
+admin    --> frontend : "Uses"
+user     --> frontend : "Uses"
+security --> frontend : "Uses"
+
+frontend --> backend  : "API calls (REST + streaming)"
+frontend --> duo      : "Redirects for MFA"
+
+backend --> groq     : "Streams LLM responses"
+backend --> gemini   : "Streams LLM responses"
+backend --> deepseek : "Streams LLM responses"
+backend --> pg       : "Reads/writes user, chat\nand event data"
+backend --> chroma   : "Stores and queries\ndocument embeddings"
+backend --> duo      : "Initiates & validates\nMFA flow"
+
+'─────────────── LEGEND ───────────────
+legend bottom right
+    <b>Legend</b>
+    |= Symbol |= Description |
+    |<back:#1168BD><color:white>   Container   </color></back>| Internal AegisAI container |
+    |<back:#808080><color:white>   External    </color></back>| External system or provider |
+    |<back:#F5F8FF><color:#444444>   Package    </color></back>| System boundary |
+    |<back:#FFFFFF><color:#555555>→ Solid arrow </color></back>| Synchronous call / data flow |
+endlegend
+
+@enduml
