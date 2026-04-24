@@ -1,0 +1,96 @@
+@startuml
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+
+skinparam class {
+    BackgroundColor       #EEF3F9
+    BorderColor           #0D4F9E
+    HeaderBackgroundColor #1168BD
+    HeaderFontColor       white
+    FontColor             #222222
+    ArrowColor            #444444
+    AttributeFontColor    #333333
+}
+
+title <size:16><b>AegisAI — C4 Code Diagram (Chat Message Flow)</b></size>
+
+class ChatRouter <<FastAPI Router>> {
+    + send_message(conversation_id, request, user_id) : StreamingResponse
+    + list_conversations(user_id) : List[ConversationResponse]
+    + get_messages(conversation_id, user_id) : List[MessageResponse]
+    + delete_conversation(conversation_id, user_id) : void
+}
+
+class ChatService <<Service>> {
+    - conv_repo : ConversationRepository
+    - doc_repo : DocumentRepository
+    - alarm_repo : FlaggedEventRepository
+    - rag_service : RAGService
+    + stream_response(conv_id, content, user_id, db) : AsyncIterator[str]
+    + create_conversation(user_id, provider, model, title, db) : ConversationResponse
+    + list_conversations(user_id, db) : List[ConversationResponse]
+    + get_security_chat_histories(db) : HistoricChatDashboardResponse
+    + get_security_alarm_events(db) : List[SecurityAlarmEventResponse]
+}
+
+class ContentPolicyFilter <<Moderation>> {
+    - HARMFUL_KEYWORDS : List[str]
+    + is_harmful(message : str) : bool
+}
+
+class RAGService <<Service>> {
+    - chroma_mgr : ChromaManager
+    + retrieve(query, allowed_doc_ids, top_k) : List[str]
+    + add_document(doc_id, pdf_bytes, user_id) : str
+    - _get_embeddings(texts) : List[List[float]]
+}
+
+class ProviderDispatcher <<Module>> {
+    + validate_provider(provider, settings) : void
+    + stream_from_provider(provider, messages, model, api_key) : AsyncIterator[str]
+}
+
+class ConversationRepository <<Repository>> {
+    + get_conversation(id, user_id, db) : Conversation
+    + create_conversation(user_id, provider, model, title, db) : Conversation
+    + add_message(conv_id, role, content, db) : Message
+    + list_conversations(user_id, db) : List[Conversation]
+    + delete_conversation(id, user_id, db) : void
+}
+
+class FlaggedEventRepository <<Repository>> {
+    + create_alarm(user_id, conv_id, content, filter_type, provider, reason, db) : Alarm
+    + list_alarms(db) : List[Alarm]
+}
+
+class ChromaManager <<Infra>> {
+    - _client : AsyncHttpClient
+    - _collection : Collection
+    + get_collection() : Collection
+    + query(embedding, n_results, where_filter) : QueryResult
+    + add(ids, embeddings, documents, metadatas) : void
+}
+
+ChatRouter          -->  ChatService           : "delegates to"
+ChatService         -->  ContentPolicyFilter   : "checks message\nbefore LLM call"
+ChatService         -->  RAGService            : "retrieves context\nchunks"
+ChatService         -->  ProviderDispatcher    : "streams LLM\nresponse"
+ChatService         -->  ConversationRepository : "persists messages\nand conversations"
+ChatService         -->  FlaggedEventRepository : "logs moderation\nalarm events"
+RAGService          -->  ChromaManager         : "vector store\noperations"
+
+legend bottom right
+    <b>Legend</b>
+    |= Stereotype |= Role |
+    | <<FastAPI Router>> | HTTP endpoint handler |
+    | <<Service>> | Business logic orchestrator |
+    | <<Repository>> | Database access layer |
+    | <<Moderation>> | Content safety component |
+    | <<Module>> | Stateless utility module |
+    | <<Infra>> | Infrastructure client wrapper |
+endlegend
+
+@enduml

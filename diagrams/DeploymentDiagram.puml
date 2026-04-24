@@ -1,0 +1,105 @@
+@startuml
+top to bottom direction
+skinparam defaultFontName Arial
+skinparam defaultFontSize 16
+skinparam padding 5
+skinparam shadowing false
+
+skinparam node {
+    BackgroundColor #EEF3F9
+    BorderColor     #0D4F9E
+    FontColor       #1168BD
+    RoundCorner     8
+}
+skinparam rectangle {
+    BackgroundColor<<Container>> #1168BD
+    FontColor<<Container>>       white
+    BorderColor<<Container>>     #0D4F9E
+    BackgroundColor<<External>>  #808080
+    FontColor<<External>>        white
+    BorderColor<<External>>      #5C5C5C
+    RoundCorner 6
+}
+skinparam database {
+    BackgroundColor #1168BD
+    FontColor       white
+    BorderColor     #0D4F9E
+}
+skinparam arrow {
+    Color     #444444
+    FontColor #555555
+    FontSize  16
+}
+
+title <size:16><b>AegisAI — Deployment Diagram (Production)</b></size>
+
+node "User's Browser\n<i>[Chrome / Firefox / Edge]</i>" as browser {
+    rectangle "<b>React SPA</b>\n<i>[JavaScript · HTML · CSS]</i>\nRuns entirely in browser\nafter initial page load" <<Container>> as spa
+}
+
+node "Docker Host\n<i>[Linux · Docker Engine]</i>" as docker_host {
+
+    node "Docker Bridge Network: <b>aegisai_net</b>" as docker_net {
+
+        node "frontend\n<i>[nginx:alpine]</i>" as fe_node {
+            rectangle "<b>NGINX</b>\n<i>[Reverse proxy + static server]</i>\nServes React build at :80\nProxies /api/* → backend:8000" <<Container>> as nginx
+        }
+
+        node "backend\n<i>[python:3.11-slim · production build]</i>" as be_node {
+            rectangle "<b>FastAPI + Uvicorn</b>\n<i>[ASGI Server · 4 workers]</i>\nAll API routes, services,\nRAG pipeline, ONNX model,\nand content moderation" <<Container>> as fastapi
+        }
+
+        node "db\n<i>[postgres:15 · no port exposed]</i>" as db_node {
+            database "<b>PostgreSQL 15</b>\nUsers, conversations,\nmessages, documents,\nmoderation alarms" as pg
+        }
+
+        node "chroma\n<i>[chromadb:1.5.5 · no port exposed]</i>" as chroma_node {
+            database "<b>ChromaDB</b>\nDocument chunk embeddings\ncosine similarity index\n(all-MiniLM-L6-v2)" as chroma
+        }
+
+        node "backend-seed\n<i>[python:3.11-slim · one-off on first deploy]</i>" as seed_node {
+            rectangle "<b>Seed Script</b>\n<i>[Python · runs once then exits]</i>\nCreates admin and security\naccounts from env secrets" <<Container>> as seed
+        }
+    }
+
+    node "Docker Named Volumes" as volumes {
+        database "postgres_prod_data\n<i>[persistent PostgreSQL data]</i>" as pg_vol
+        database "chroma_prod_data\n<i>[persistent ChromaDB data]</i>" as chroma_vol
+    }
+}
+
+node "External Cloud Services" as ext_node {
+    rectangle "<b>Groq API</b>\n<i>[api.groq.com]</i>\nOpenAI-compatible\nLLM streaming" <<External>> as groq
+    rectangle "<b>Google Gemini API</b>\n<i>[Google Cloud]</i>\nAlternative LLM\nprovider" <<External>> as gemini
+    rectangle "<b>DeepSeek API</b>\n<i>[api.deepseek.com]</i>\nAlternative LLM\nprovider" <<External>> as deepseek
+    rectangle "<b>Duo Security</b>\n<i>[Universal Prompt MFA]</i>\nChallenge and\nverification flow" <<External>> as duo
+}
+
+node "GitHub Actions  <i>[CI/CD Pipeline]</i>" as ci_node {
+    rectangle "<b>compose-tests</b>\n<i>[pytest + vitest]</i>\nUnit and integration tests\non every PR" <<Container>> as ci_unit
+    rectangle "<b>e2e-compose</b>\n<i>[Playwright]</i>\nEnd-to-end browser tests\nafter unit tests pass" <<Container>> as ci_e2e
+}
+
+browser  --> nginx      : "HTTPS :80"
+nginx    --> fastapi    : "HTTP :8000\n(proxy /api/*)"
+fastapi  --> pg         : "asyncpg  TCP :5432"
+fastapi  --> chroma     : "HTTP REST  :8000"
+fastapi  --> groq       : "HTTPS / SSE"
+fastapi  --> gemini     : "HTTPS / SSE"
+fastapi  --> deepseek   : "HTTPS / SSE"
+fastapi  --> duo        : "HTTPS"
+pg       --> pg_vol     : "persists to"
+chroma   --> chroma_vol : "persists to"
+seed     --> pg         : "seeds admin\naccounts once"
+
+legend bottom right
+    <b>Legend</b>
+    |= Symbol |= Description |
+    |<back:#EEF3F9><color:#1168BD>   Node        </color></back>| Deployment node (host or runtime) |
+    |<back:#1168BD><color:white>   Container   </color></back>| Internal AegisAI deployable unit |
+    |<back:#808080><color:white>   External    </color></back>| External cloud service |
+    |<back:#1168BD><color:white>   Database    </color></back>| Persistent data store |
+    |<back:#FFFFFF><color:#555555>→ Arrow       </color></back>| Network call or data flow |
+endlegend
+
+@enduml
